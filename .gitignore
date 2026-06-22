@@ -1,0 +1,8 @@
+__pycache__/
+Images telechargees/
+config.json
+build/
+dist/
+Pack and go/
+*.spec
+*.zip
