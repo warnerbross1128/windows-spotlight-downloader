@@ -7,18 +7,18 @@ import os
 import re
 import socketserver
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 
 BASE_URL = "https://windows10spotlight.com"
-APP_VERSION = "0.1.2"
+APP_VERSION = "0.2.0"
 GITHUB_REPO = "warnerbross1128/windows-spotlight-downloader"
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 DEFAULT_LIBRARY_DIR = APP_DIR / "Images telechargees"
@@ -583,7 +583,7 @@ INDEX_HTML = r"""<!doctype html>
           <button id="imagesTab" class="tab active" type="button">Images</button>
           <button id="configTab" class="tab" type="button">Config</button>
         </nav>
-        <span class="app-version">Version 0.1.2</span>
+        <span class="app-version">Version 0.2.0</span>
       </div>
       <div class="controls">
         <label>Page début <input id="start" type="number" min="1" value="1"></label>
@@ -1073,11 +1073,24 @@ def main() -> int:
         url = f"http://127.0.0.1:{port}"
         print(f"Windows Spotlight Downloader: {url}")
         print(f"Dossier de sortie: {library_dir()}")
-        webbrowser.open(url)
+        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+        server_thread.start()
         try:
-            server.serve_forever()
+            import webview
+
+            webview.create_window(
+                "Windows Spotlight Downloader",
+                url,
+                width=1280,
+                height=860,
+                min_size=(980, 620),
+            )
+            webview.start(gui="winforms")
         except KeyboardInterrupt:
             print("\nArrêt.")
+        finally:
+            server.shutdown()
+            server.server_close()
     return 0
 
 

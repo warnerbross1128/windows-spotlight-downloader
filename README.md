@@ -4,7 +4,7 @@ Petit logiciel local pour choisir et télécharger les images de `windows10spotl
 
 Source des images: [windows10spotlight.com](https://windows10spotlight.com/)
 
-Version actuelle: `0.1.2`
+Version actuelle: `0.2.0`
 
 ## Lancer
 
@@ -12,7 +12,9 @@ Version portable: double-cliquer sur `WindowsSpotlightDownloader.exe`.
 
 Version source: double-cliquer sur `Lancer le telechargeur.bat`.
 
-Le navigateur s'ouvre sur l'interface locale. Les fichiers sélectionnés sont enregistrés dans `Images telechargees`.
+Une fenêtre Windows s'ouvre avec l'interface de l'application. Les fichiers sélectionnés sont enregistrés dans `Images telechargees`.
+
+Depuis `0.2.0`, l'application utilise PyWebView: fermer la fenêtre ferme aussi le processus.
 
 ## Configurer la bibliothèque
 
