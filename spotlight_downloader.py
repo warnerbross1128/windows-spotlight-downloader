@@ -18,7 +18,7 @@ from pathlib import Path
 
 
 BASE_URL = "https://windows10spotlight.com"
-APP_VERSION = "0.1.1"
+APP_VERSION = "0.1.2"
 GITHUB_REPO = "warnerbross1128/windows-spotlight-downloader"
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 DEFAULT_LIBRARY_DIR = APP_DIR / "Images telechargees"
@@ -235,6 +235,25 @@ def unique_path(path: Path) -> Path:
     raise RuntimeError(f"Impossible de créer un nom unique pour {path.name}")
 
 
+def target_path_for_item(item: dict[str, str], target_dir: Path | None = None) -> Path:
+    url = item.get("finalUrl", "")
+    target_dir = target_dir or library_dir()
+    extension = Path(urllib.parse.urlsplit(url).path).suffix or ".jpg"
+    date = slugify(item.get("date", ""), "spotlight")
+    title = slugify(item.get("title", ""), Path(urllib.parse.urlsplit(url).path).stem)
+    file_name = f"{date}-{title}{extension}" if date else f"{title}{extension}"
+    return target_dir / file_name
+
+
+def mark_library_status(items: list[dict[str, str]]) -> list[dict[str, str]]:
+    target_dir = library_dir()
+    for item in items:
+        target = target_path_for_item(item, target_dir)
+        item["inLibrary"] = target.exists()
+        item["libraryPath"] = str(target) if target.exists() else ""
+    return items
+
+
 def download_items(items: list[dict[str, str]]) -> list[dict[str, str]]:
     target_dir = library_dir()
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -245,15 +264,14 @@ def download_items(items: list[dict[str, str]]) -> list[dict[str, str]]:
             results.append({"ok": False, "url": url, "error": "URL refusée"})
             continue
 
-        extension = Path(urllib.parse.urlsplit(url).path).suffix or ".jpg"
-        date = slugify(item.get("date", ""), "spotlight")
-        title = slugify(item.get("title", ""), Path(urllib.parse.urlsplit(url).path).stem)
-        file_name = f"{date}-{title}{extension}" if date else f"{title}{extension}"
-        target = unique_path(target_dir / file_name)
+        target = target_path_for_item(item, target_dir)
+        if target.exists():
+            results.append({"ok": True, "skipped": True, "url": url, "path": str(target), "name": target.name})
+            continue
 
         try:
             target.write_bytes(fetch_bytes(url))
-            results.append({"ok": True, "url": url, "path": str(target), "name": target.name})
+            results.append({"ok": True, "skipped": False, "url": url, "path": str(target), "name": target.name})
         except Exception as exc:
             results.append({"ok": False, "url": url, "error": str(exc)})
     return results
@@ -483,6 +501,13 @@ INDEX_HTML = r"""<!doctype html>
     .tile:hover {
       border-color: var(--accent);
     }
+    .tile.in-library {
+      cursor: default;
+      opacity: .78;
+    }
+    .tile.in-library:hover {
+      border-color: var(--line);
+    }
     .image-wrap {
       position: relative;
       aspect-ratio: 16 / 9;
@@ -501,6 +526,19 @@ INDEX_HTML = r"""<!doctype html>
       width: 26px;
       height: 26px;
       accent-color: var(--accent);
+    }
+    .library-badge {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      max-width: calc(100% - 56px);
+      padding: 5px 8px;
+      border-radius: 6px;
+      background: rgba(31, 41, 51, .88);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.2;
     }
     .meta {
       padding: 10px 12px 12px;
@@ -545,7 +583,7 @@ INDEX_HTML = r"""<!doctype html>
           <button id="imagesTab" class="tab active" type="button">Images</button>
           <button id="configTab" class="tab" type="button">Config</button>
         </nav>
-        <span class="app-version">Version 0.1.1</span>
+        <span class="app-version">Version 0.1.2</span>
       </div>
       <div class="controls">
         <label>Page début <input id="start" type="number" min="1" value="1"></label>
@@ -631,7 +669,7 @@ INDEX_HTML = r"""<!doctype html>
     }
 
     function selectedItems() {
-      return [...document.querySelectorAll(".pick:checked")].map(input => items[Number(input.dataset.index)]);
+      return [...document.querySelectorAll(".pick:checked:not(:disabled)")].map(input => items[Number(input.dataset.index)]);
     }
 
     function updateCounter() {
@@ -641,6 +679,41 @@ INDEX_HTML = r"""<!doctype html>
         const checked = tile.querySelector(".pick").checked;
         tile.classList.toggle("selected", checked);
       });
+    }
+
+    function markTileInLibrary(index, path = "") {
+      const item = items[index];
+      if (!item) return;
+      item.inLibrary = true;
+      item.libraryPath = path || item.libraryPath || "";
+      const tile = document.querySelector(`.tile[data-index="${index}"]`);
+      if (!tile) return;
+      tile.classList.add("in-library");
+      tile.classList.remove("selected");
+      const checkbox = tile.querySelector(".pick");
+      checkbox.checked = false;
+      checkbox.disabled = true;
+      if (!tile.querySelector(".library-badge")) {
+        const badge = document.createElement("span");
+        badge.className = "library-badge";
+        badge.textContent = "Déjà dans la bibliothèque";
+        tile.querySelector(".image-wrap").appendChild(badge);
+      }
+      updateCounter();
+    }
+
+    function unmarkTileInLibrary(index) {
+      const item = items[index];
+      if (!item) return;
+      item.inLibrary = false;
+      item.libraryPath = "";
+      const tile = document.querySelector(`.tile[data-index="${index}"]`);
+      if (!tile) return;
+      tile.classList.remove("in-library");
+      const checkbox = tile.querySelector(".pick");
+      checkbox.disabled = false;
+      tile.querySelector(".library-badge")?.remove();
+      updateCounter();
     }
 
     function appendItems(nextItems) {
@@ -655,10 +728,13 @@ INDEX_HTML = r"""<!doctype html>
         const index = startIndex + offset;
         const article = document.createElement("article");
         article.className = "tile";
+        article.dataset.index = index;
+        if (item.inLibrary) article.classList.add("in-library");
         article.innerHTML = `
           <div class="image-wrap">
-            <input class="check pick" type="checkbox" data-index="${index}">
+            <input class="check pick" type="checkbox" data-index="${index}" ${item.inLibrary ? "disabled" : ""}>
             <img loading="lazy" src="/proxy?url=${encodeURIComponent(item.previewUrl || item.finalUrl)}" alt="">
+            ${item.inLibrary ? '<span class="library-badge">Déjà dans la bibliothèque</span>' : ''}
           </div>
           <div class="meta">
             <div class="title"></div>
@@ -674,6 +750,7 @@ INDEX_HTML = r"""<!doctype html>
         checkbox.addEventListener("change", updateCounter);
         article.querySelector("a").addEventListener("click", event => event.stopPropagation());
         article.addEventListener("click", () => {
+          if (item.inLibrary) return;
           checkbox.checked = !checkbox.checked;
           updateCounter();
         });
@@ -731,9 +808,15 @@ INDEX_HTML = r"""<!doctype html>
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Téléchargement impossible");
-        const ok = data.results.filter(item => item.ok).length;
-        const failed = data.results.length - ok;
-        statusEl.textContent = `${ok} fichier${ok > 1 ? "s" : ""} enregistré${ok > 1 ? "s" : ""} dans ${data.folder}${failed ? `, ${failed} échec${failed > 1 ? "s" : ""}` : ""}.`;
+        const saved = data.results.filter(item => item.ok && !item.skipped);
+        const skipped = data.results.filter(item => item.ok && item.skipped);
+        const failed = data.results.filter(item => !item.ok).length;
+        for (const result of data.results) {
+          if (!result.ok) continue;
+          const index = items.findIndex(item => item.finalUrl === result.url);
+          if (index >= 0) markTileInLibrary(index, result.path || "");
+        }
+        statusEl.textContent = `${saved.length} téléchargée${saved.length > 1 ? "s" : ""}, ${skipped.length} déjà présente${skipped.length > 1 ? "s" : ""}${failed ? `, ${failed} erreur${failed > 1 ? "s" : ""}` : ""}. Dossier: ${data.folder}`;
       } catch (error) {
         statusEl.className = "error";
         statusEl.textContent = error.message;
@@ -770,6 +853,7 @@ INDEX_HTML = r"""<!doctype html>
         if (!response.ok) throw new Error(data.error || "Enregistrement impossible");
         libraryDirInput.value = data.libraryDir;
         configStatusEl.textContent = `Dossier enregistré: ${data.libraryDir}`;
+        refreshLibraryStatus();
       } catch (error) {
         configStatusEl.className = "status error";
         configStatusEl.textContent = error.message;
@@ -813,6 +897,26 @@ INDEX_HTML = r"""<!doctype html>
       }
     }
 
+    async function refreshLibraryStatus() {
+      if (!items.length) return;
+      try {
+        const response = await fetch("/api/library-status", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({items})
+        });
+        const data = await response.json();
+        if (!response.ok) return;
+        for (const [index, item] of data.items.entries()) {
+          items[index].inLibrary = item.inLibrary;
+          items[index].libraryPath = item.libraryPath || "";
+          if (item.inLibrary) markTileInLibrary(index, item.libraryPath || "");
+          else unmarkTileInLibrary(index);
+        }
+      } catch (error) {
+      }
+    }
+
     scanBtn.addEventListener("click", () => loadBatch({reset: true}));
     loadMoreBtn.addEventListener("click", () => loadBatch());
     downloadBtn.addEventListener("click", download);
@@ -821,7 +925,7 @@ INDEX_HTML = r"""<!doctype html>
     saveConfigBtn.addEventListener("click", saveConfig);
     pickFolderBtn.addEventListener("click", pickFolder);
     selectAllBtn.addEventListener("click", () => {
-      const picks = [...document.querySelectorAll(".pick")];
+      const picks = [...document.querySelectorAll(".pick:not(:disabled)")];
       const shouldCheck = picks.some(input => !input.checked);
       picks.forEach(input => input.checked = shouldCheck);
       updateCounter();
@@ -863,7 +967,7 @@ class Handler(BaseHTTPRequestHandler):
                 start = max(1, int(params.get("start", ["1"])[0]))
                 pages = min(20, max(1, int(params.get("pages", ["3"])[0])))
                 query = params.get("query", [""])[0]
-                items = scan_pages(start, pages, query)
+                items = mark_library_status(scan_pages(start, pages, query))
                 self.send_json({"items": items})
             except Exception as exc:
                 self.send_json({"error": str(exc)}, 500)
@@ -921,6 +1025,15 @@ class Handler(BaseHTTPRequestHandler):
                 length = int(self.headers.get("Content-Length", "0"))
                 payload = json.loads(self.rfile.read(length).decode("utf-8"))
                 self.send_json(save_config(payload))
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 500)
+            return
+
+        if path == "/api/library-status":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length).decode("utf-8"))
+                self.send_json({"items": mark_library_status(payload.get("items", []))})
             except Exception as exc:
                 self.send_json({"error": str(exc)}, 500)
             return

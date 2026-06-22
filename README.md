@@ -4,7 +4,7 @@ Petit logiciel local pour choisir et télécharger les images de `windows10spotl
 
 Source des images: [windows10spotlight.com](https://windows10spotlight.com/)
 
-Version actuelle: `0.1.1`
+Version actuelle: `0.1.2`
 
 ## Lancer
 
@@ -30,5 +30,6 @@ Pour publier une mise à jour, incrémenter la version dans `spotlight_downloade
 
 - Les vignettes WordPress comme `image-1024x576.jpg` sont converties vers l'URL originale `image.jpg`.
 - Le bouton `Original` ouvre l'image finale dans un nouvel onglet.
+- Les images déjà présentes dans la bibliothèque sont signalées dans la grille et ignorées au téléchargement.
 - Le chargement se fait par lots. `Scanner` repart depuis la page de début, et `Charger plus` ajoute le lot suivant sans effacer les images déjà affichées.
 - Chaque lot est limité à 20 pages pour éviter de marteler le site.
