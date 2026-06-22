@@ -20,7 +20,7 @@ from pathlib import Path
 
 
 BASE_URL = "https://windows10spotlight.com"
-APP_VERSION = "0.2.3"
+APP_VERSION = "0.2.4"
 GITHUB_REPO = "warnerbross1128/windows-spotlight-downloader"
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
@@ -413,7 +413,13 @@ INDEX_HTML = r"""<!doctype html>
     }
     .title-block {
       display: grid;
-      gap: 8px;
+      gap: 10px;
+    }
+    .title-line {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 8px 12px;
     }
     .tabs {
       display: flex;
@@ -637,6 +643,7 @@ INDEX_HTML = r"""<!doctype html>
       .bar { grid-template-columns: 1fr; align-items: stretch; }
       .brand { align-items: flex-start; }
       .app-logo { width: 48px; height: 48px; }
+      .title-line { align-items: flex-start; }
       .controls { justify-content: stretch; }
       label, button { flex: 1 1 130px; }
       input[type="search"] { width: 100%; }
@@ -650,13 +657,15 @@ INDEX_HTML = r"""<!doctype html>
       <div class="brand">
         <img class="app-logo" src="/assets/logo.svg" alt="" aria-hidden="true">
         <div class="title-block">
-          <h1>Windows Spotlight Downloader</h1>
-          <a class="source-link" href="https://windows10spotlight.com/" target="_blank" rel="noreferrer">Source: windows10spotlight.com</a>
+          <div class="title-line">
+            <h1>Windows Spotlight Downloader</h1>
+            <a class="source-link" href="https://windows10spotlight.com/" target="_blank" rel="noreferrer">Source: windows10spotlight.com</a>
+            <span class="app-version">Version 0.2.4</span>
+          </div>
           <nav class="tabs" aria-label="Navigation">
             <button id="imagesTab" class="tab active" type="button">Images</button>
             <button id="configTab" class="tab" type="button">Config</button>
           </nav>
-          <span class="app-version">Version 0.2.3</span>
         </div>
       </div>
       <div class="controls">
