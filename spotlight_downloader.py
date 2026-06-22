@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import json
 import mimetypes
+import msvcrt
 import os
 import re
 import socketserver
@@ -12,17 +13,20 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import tempfile
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 
 BASE_URL = "https://windows10spotlight.com"
-APP_VERSION = "0.2.1"
+APP_VERSION = "0.2.2"
 GITHUB_REPO = "warnerbross1128/windows-spotlight-downloader"
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 DEFAULT_LIBRARY_DIR = APP_DIR / "Images telechargees"
 CONFIG_PATH = APP_DIR / "config.json"
+INSTANCE_LOCK_PATH = Path(tempfile.gettempdir()) / "WindowsSpotlightDownloader.lock"
+INSTANCE_LOCK_FILE = None
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
@@ -57,6 +61,28 @@ def save_config(config: dict[str, str]) -> dict[str, str]:
 
 def library_dir() -> Path:
     return Path(load_config()["libraryDir"])
+
+
+def show_message(title: str, message: str) -> None:
+    try:
+        import ctypes
+
+        ctypes.windll.user32.MessageBoxW(None, message, title, 0x40)
+    except Exception:
+        print(f"{title}: {message}")
+
+
+def acquire_single_instance_lock() -> bool:
+    global INSTANCE_LOCK_FILE
+    INSTANCE_LOCK_FILE = INSTANCE_LOCK_PATH.open("a+b")
+    try:
+        INSTANCE_LOCK_FILE.seek(0)
+        msvcrt.locking(INSTANCE_LOCK_FILE.fileno(), msvcrt.LK_NBLCK, 1)
+        return True
+    except OSError:
+        INSTANCE_LOCK_FILE.close()
+        INSTANCE_LOCK_FILE = None
+        return False
 
 
 def fetch_bytes(url: str, timeout: int = 30) -> bytes:
@@ -221,18 +247,6 @@ def scan_pages(start: int, pages: int, query: str = "", delay: float = 1.0) -> l
             seen.add(item["finalUrl"])
             all_items.append(item)
     return all_items
-
-
-def unique_path(path: Path) -> Path:
-    if not path.exists():
-        return path
-    stem = path.stem
-    suffix = path.suffix
-    for index in range(2, 1000):
-        candidate = path.with_name(f"{stem}-{index}{suffix}")
-        if not candidate.exists():
-            return candidate
-    raise RuntimeError(f"Impossible de créer un nom unique pour {path.name}")
 
 
 def target_path_for_item(item: dict[str, str], target_dir: Path | None = None) -> Path:
@@ -627,7 +641,7 @@ INDEX_HTML = r"""<!doctype html>
           <button id="imagesTab" class="tab active" type="button">Images</button>
           <button id="configTab" class="tab" type="button">Config</button>
         </nav>
-        <span class="app-version">Version 0.2.1</span>
+        <span class="app-version">Version 0.2.2</span>
       </div>
       <div class="controls">
         <label>Page début <input id="start" type="number" min="1" value="1"></label>
@@ -1062,6 +1076,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": str(exc)}, 500)
             return
 
+        if parsed.path == "/api/version":
+            self.send_json({"version": APP_VERSION, "appDir": str(APP_DIR)})
+            return
+
         if parsed.path == "/api/update-check":
             try:
                 self.send_json(check_for_update())
@@ -1140,16 +1158,17 @@ def open_server() -> LocalServer:
     preferred = 8765
     if len(sys.argv) > 1:
         preferred = int(sys.argv[1])
-    for port in range(preferred, preferred + 25):
-        try:
-            return LocalServer(("127.0.0.1", port), Handler)
-        except OSError:
-            continue
-    return LocalServer(("127.0.0.1", 0), Handler)
+    return LocalServer(("127.0.0.1", preferred), Handler)
 
 
 def main() -> int:
     os.chdir(APP_DIR)
+    if not acquire_single_instance_lock():
+        show_message(
+            "Windows Spotlight Downloader",
+            "Windows Spotlight Downloader est déjà ouvert. Ferme l'autre fenêtre avant d'en lancer une nouvelle.",
+        )
+        return 1
     with open_server() as server:
         port = server.server_address[1]
         url = f"http://127.0.0.1:{port}"
