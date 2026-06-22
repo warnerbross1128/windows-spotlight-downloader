@@ -4,6 +4,8 @@ Petit logiciel local pour choisir et télécharger les images de `windows10spotl
 
 Source des images: [windows10spotlight.com](https://windows10spotlight.com/)
 
+Version actuelle: `0.1.1`
+
 ## Lancer
 
 Version portable: double-cliquer sur `WindowsSpotlightDownloader.exe`.
@@ -17,6 +19,12 @@ Le navigateur s'ouvre sur l'interface locale. Les fichiers sélectionnés sont e
 Ouvrir l'onglet `Config`, choisir ou saisir le dossier de bibliothèque, puis cliquer sur `Enregistrer`.
 
 Les prochains téléchargements seront enregistrés dans ce dossier. La configuration est gardée dans `config.json`.
+
+## Mises à jour
+
+Au démarrage, l'application vérifie la dernière release GitHub publique. Si une version plus récente existe, une notification apparaît avec un lien direct pour télécharger le nouvel exécutable.
+
+Pour publier une mise à jour, incrémenter la version dans `spotlight_downloader.py`, créer une nouvelle release GitHub, puis joindre `WindowsSpotlightDownloader.exe`.
 
 ## Notes
 

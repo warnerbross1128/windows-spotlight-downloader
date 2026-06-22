@@ -18,6 +18,8 @@ from pathlib import Path
 
 
 BASE_URL = "https://windows10spotlight.com"
+APP_VERSION = "0.1.1"
+GITHUB_REPO = "warnerbross1128/windows-spotlight-downloader"
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 DEFAULT_LIBRARY_DIR = APP_DIR / "Images telechargees"
 CONFIG_PATH = APP_DIR / "config.json"
@@ -72,6 +74,48 @@ def fetch_bytes(url: str, timeout: int = 30) -> bytes:
 
 def fetch_text(url: str) -> str:
     return fetch_bytes(url).decode("utf-8", errors="replace")
+
+
+def fetch_json(url: str, timeout: int = 15) -> dict:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "application/vnd.github+json, application/json",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8", errors="replace"))
+
+
+def version_parts(value: str) -> tuple[int, ...]:
+    cleaned = value.strip().lstrip("vV")
+    parts = []
+    for part in cleaned.split("."):
+        match = re.match(r"\d+", part)
+        parts.append(int(match.group(0)) if match else 0)
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts)
+
+
+def check_for_update() -> dict[str, object]:
+    latest = fetch_json(f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest")
+    latest_version = str(latest.get("tag_name", "")).lstrip("vV") or APP_VERSION
+    asset_url = ""
+    for asset in latest.get("assets", []):
+        if asset.get("name") == "WindowsSpotlightDownloader.exe":
+            asset_url = asset.get("browser_download_url", "")
+            break
+
+    update_available = version_parts(latest_version) > version_parts(APP_VERSION)
+    return {
+        "currentVersion": APP_VERSION,
+        "latestVersion": latest_version,
+        "updateAvailable": update_available,
+        "releaseUrl": latest.get("html_url", ""),
+        "downloadUrl": asset_url or latest.get("html_url", ""),
+    }
 
 
 def page_url(page: int) -> str:
@@ -302,6 +346,11 @@ INDEX_HTML = r"""<!doctype html>
       display: flex;
       gap: 6px;
     }
+    .app-version {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
     .tab {
       min-height: 34px;
       padding: 6px 10px;
@@ -360,6 +409,24 @@ INDEX_HTML = r"""<!doctype html>
       max-width: 1280px;
       margin: 0 auto;
       padding: 18px 20px 40px;
+    }
+    .update-notice {
+      margin-bottom: 14px;
+      padding: 12px 14px;
+      border: 1px solid #f5c044;
+      border-radius: 8px;
+      background: #fff7d6;
+      color: var(--ink);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 14px;
+    }
+    .update-notice[hidden] { display: none; }
+    .update-notice a {
+      flex: 0 0 auto;
+      color: #7a4d00;
     }
     .status {
       min-height: 26px;
@@ -478,6 +545,7 @@ INDEX_HTML = r"""<!doctype html>
           <button id="imagesTab" class="tab active" type="button">Images</button>
           <button id="configTab" class="tab" type="button">Config</button>
         </nav>
+        <span class="app-version">Version 0.1.1</span>
       </div>
       <div class="controls">
         <label>Page début <input id="start" type="number" min="1" value="1"></label>
@@ -490,6 +558,10 @@ INDEX_HTML = r"""<!doctype html>
     </div>
   </header>
   <main>
+    <div id="updateNotice" class="update-notice" hidden>
+      <span id="updateText"></span>
+      <a id="updateLink" href="#" target="_blank" rel="noreferrer">Télécharger</a>
+    </div>
     <section id="imagesPage" class="page">
       <div class="status">
         <span id="status">Prêt.</span>
@@ -533,6 +605,9 @@ INDEX_HTML = r"""<!doctype html>
     const configStatusEl = document.querySelector("#configStatus");
     const pickFolderBtn = document.querySelector("#pickFolder");
     const saveConfigBtn = document.querySelector("#saveConfig");
+    const updateNotice = document.querySelector("#updateNotice");
+    const updateText = document.querySelector("#updateText");
+    const updateLink = document.querySelector("#updateLink");
     let items = [];
     let seenUrls = new Set();
     let nextPage = 1;
@@ -725,6 +800,19 @@ INDEX_HTML = r"""<!doctype html>
       }
     }
 
+    async function checkForUpdates() {
+      try {
+        const response = await fetch("/api/update-check");
+        const data = await response.json();
+        if (!response.ok || !data.updateAvailable) return;
+        updateText.textContent = `Nouvelle version disponible: ${data.latestVersion} (vous avez ${data.currentVersion}).`;
+        updateLink.href = data.downloadUrl || data.releaseUrl;
+        updateNotice.hidden = false;
+      } catch (error) {
+        updateNotice.hidden = true;
+      }
+    }
+
     scanBtn.addEventListener("click", () => loadBatch({reset: true}));
     loadMoreBtn.addEventListener("click", () => loadBatch());
     downloadBtn.addEventListener("click", download);
@@ -738,6 +826,7 @@ INDEX_HTML = r"""<!doctype html>
       picks.forEach(input => input.checked = shouldCheck);
       updateCounter();
     });
+    checkForUpdates();
     loadBatch({reset: true});
   </script>
 </body>
@@ -783,6 +872,13 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/config":
             try:
                 self.send_json(load_config())
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 500)
+            return
+
+        if parsed.path == "/api/update-check":
+            try:
+                self.send_json(check_for_update())
             except Exception as exc:
                 self.send_json({"error": str(exc)}, 500)
             return
