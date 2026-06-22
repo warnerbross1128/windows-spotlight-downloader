@@ -18,7 +18,7 @@ from pathlib import Path
 
 
 BASE_URL = "https://windows10spotlight.com"
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.2.1"
 GITHUB_REPO = "warnerbross1128/windows-spotlight-downloader"
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 DEFAULT_LIBRARY_DIR = APP_DIR / "Images telechargees"
@@ -245,12 +245,41 @@ def target_path_for_item(item: dict[str, str], target_dir: Path | None = None) -
     return target_dir / file_name
 
 
+def library_match_for_item(item: dict[str, str], target_dir: Path | None = None) -> Path | None:
+    target_dir = target_dir or library_dir()
+    target = target_path_for_item(item, target_dir)
+    if target.exists():
+        return target
+
+    url_name = Path(urllib.parse.urlsplit(item.get("finalUrl", "")).path).name
+    original = target_dir / url_name
+    if original.exists():
+        return original
+
+    if not target_dir.exists():
+        return None
+
+    target_stem = re.escape(target.stem)
+    target_suffix = re.escape(target.suffix)
+    target_variant = re.compile(rf"^{target_stem}(?:-\d+)?{target_suffix}$", re.I)
+    original_stem = Path(url_name).stem.casefold()
+
+    for existing in target_dir.iterdir():
+        if not existing.is_file():
+            continue
+        if target_variant.match(existing.name):
+            return existing
+        if original_stem and original_stem in existing.stem.casefold() and existing.suffix.casefold() == target.suffix.casefold():
+            return existing
+    return None
+
+
 def mark_library_status(items: list[dict[str, str]]) -> list[dict[str, str]]:
     target_dir = library_dir()
     for item in items:
-        target = target_path_for_item(item, target_dir)
-        item["inLibrary"] = target.exists()
-        item["libraryPath"] = str(target) if target.exists() else ""
+        target = library_match_for_item(item, target_dir)
+        item["inLibrary"] = target is not None
+        item["libraryPath"] = str(target) if target else ""
     return items
 
 
@@ -264,10 +293,11 @@ def download_items(items: list[dict[str, str]]) -> list[dict[str, str]]:
             results.append({"ok": False, "url": url, "error": "URL refusée"})
             continue
 
-        target = target_path_for_item(item, target_dir)
-        if target.exists():
-            results.append({"ok": True, "skipped": True, "url": url, "path": str(target), "name": target.name})
+        existing = library_match_for_item(item, target_dir)
+        if existing:
+            results.append({"ok": True, "skipped": True, "url": url, "path": str(existing), "name": existing.name})
             continue
+        target = target_path_for_item(item, target_dir)
 
         try:
             target.write_bytes(fetch_bytes(url))
@@ -456,6 +486,20 @@ INDEX_HTML = r"""<!doctype html>
       gap: 12px;
       margin-bottom: 14px;
     }
+    .progress-wrap {
+      height: 8px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: var(--line);
+      margin: -4px 0 14px;
+    }
+    .progress-bar {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--accent);
+      transition: width .18s ease;
+    }
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -583,7 +627,7 @@ INDEX_HTML = r"""<!doctype html>
           <button id="imagesTab" class="tab active" type="button">Images</button>
           <button id="configTab" class="tab" type="button">Config</button>
         </nav>
-        <span class="app-version">Version 0.2.0</span>
+        <span class="app-version">Version 0.2.1</span>
       </div>
       <div class="controls">
         <label>Page début <input id="start" type="number" min="1" value="1"></label>
@@ -604,6 +648,9 @@ INDEX_HTML = r"""<!doctype html>
       <div class="status">
         <span id="status">Prêt.</span>
         <span id="counter">0 sélectionnée</span>
+      </div>
+      <div id="progressWrap" class="progress-wrap" hidden>
+        <div id="progressBar" class="progress-bar"></div>
       </div>
       <section id="grid" class="grid"></section>
       <div class="load-more-wrap">
@@ -646,6 +693,8 @@ INDEX_HTML = r"""<!doctype html>
     const updateNotice = document.querySelector("#updateNotice");
     const updateText = document.querySelector("#updateText");
     const updateLink = document.querySelector("#updateLink");
+    const progressWrap = document.querySelector("#progressWrap");
+    const progressBar = document.querySelector("#progressBar");
     let items = [];
     let seenUrls = new Set();
     let nextPage = 1;
@@ -666,6 +715,22 @@ INDEX_HTML = r"""<!doctype html>
       scanBtn.disabled = isBusy;
       loadMoreBtn.disabled = isBusy;
       downloadBtn.disabled = isBusy;
+    }
+
+    function setProgress(done, total) {
+      if (!total) {
+        progressWrap.hidden = true;
+        progressBar.style.width = "0%";
+        return;
+      }
+      progressWrap.hidden = false;
+      progressBar.style.width = `${Math.round((done / total) * 100)}%`;
+      if (done >= total) {
+        setTimeout(() => {
+          progressWrap.hidden = true;
+          progressBar.style.width = "0%";
+        }, 700);
+      }
     }
 
     function selectedItems() {
@@ -777,10 +842,17 @@ INDEX_HTML = r"""<!doctype html>
       statusEl.className = "";
       statusEl.textContent = reset ? "Scan en cours..." : "Chargement du lot suivant...";
       try {
-        const response = await fetch(`/api/scan?start=${start}&pages=${pages}&query=${encodeURIComponent(query)}`);
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Scan impossible");
-        const added = appendItems(data.items);
+        let added = 0;
+        for (let offset = 0; offset < pages; offset++) {
+          const page = start + offset;
+          setProgress(offset, pages);
+          statusEl.textContent = `Scan de la page ${page} (${offset + 1}/${pages})...`;
+          const response = await fetch(`/api/scan?start=${page}&pages=1&query=${encodeURIComponent(query)}`);
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "Scan impossible");
+          added += appendItems(data.items);
+          setProgress(offset + 1, pages);
+        }
         nextPage = start + pages;
         statusEl.textContent = `${items.length} image${items.length > 1 ? "s" : ""} affichée${items.length > 1 ? "s" : ""}. Dernier lot: ${added} nouvelle${added > 1 ? "s" : ""}. Prochaine page: ${nextPage}.`;
       } catch (error) {
@@ -801,22 +873,31 @@ INDEX_HTML = r"""<!doctype html>
       statusEl.className = "";
       statusEl.textContent = "Téléchargement...";
       try {
-        const response = await fetch("/api/download", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({items: chosen})
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Téléchargement impossible");
-        const saved = data.results.filter(item => item.ok && !item.skipped);
-        const skipped = data.results.filter(item => item.ok && item.skipped);
-        const failed = data.results.filter(item => !item.ok).length;
-        for (const result of data.results) {
+        const results = [];
+        let folder = "";
+        for (const [index, item] of chosen.entries()) {
+          setProgress(index, chosen.length);
+          statusEl.textContent = `Téléchargement ${index + 1}/${chosen.length}...`;
+          const response = await fetch("/api/download", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({items: [item]})
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "Téléchargement impossible");
+          folder = data.folder || folder;
+          results.push(...data.results);
+          setProgress(index + 1, chosen.length);
+        }
+        const saved = results.filter(item => item.ok && !item.skipped);
+        const skipped = results.filter(item => item.ok && item.skipped);
+        const failed = results.filter(item => !item.ok).length;
+        for (const result of results) {
           if (!result.ok) continue;
           const index = items.findIndex(item => item.finalUrl === result.url);
           if (index >= 0) markTileInLibrary(index, result.path || "");
         }
-        statusEl.textContent = `${saved.length} téléchargée${saved.length > 1 ? "s" : ""}, ${skipped.length} déjà présente${skipped.length > 1 ? "s" : ""}${failed ? `, ${failed} erreur${failed > 1 ? "s" : ""}` : ""}. Dossier: ${data.folder}`;
+        statusEl.textContent = `${saved.length} téléchargée${saved.length > 1 ? "s" : ""}, ${skipped.length} déjà présente${skipped.length > 1 ? "s" : ""}${failed ? `, ${failed} erreur${failed > 1 ? "s" : ""}` : ""}. Dossier: ${folder}`;
       } catch (error) {
         statusEl.className = "error";
         statusEl.textContent = error.message;
