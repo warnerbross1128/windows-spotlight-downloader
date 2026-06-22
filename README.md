@@ -1,10 +1,14 @@
 # Windows Spotlight Downloader
 
+<p align="center">
+  <img src="assets/logo.png" width="120" alt="Windows Spotlight Downloader logo">
+</p>
+
 Petit logiciel local pour choisir et télécharger les images de `windows10spotlight.com` en qualité originale.
 
 Source des images: [windows10spotlight.com](https://windows10spotlight.com/)
 
-Version actuelle: `0.2.2`
+Version actuelle: `0.2.3`
 
 ## Screenshots
 

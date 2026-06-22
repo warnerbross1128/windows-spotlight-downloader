@@ -20,9 +20,10 @@ from pathlib import Path
 
 
 BASE_URL = "https://windows10spotlight.com"
-APP_VERSION = "0.2.2"
+APP_VERSION = "0.2.3"
 GITHUB_REPO = "warnerbross1128/windows-spotlight-downloader"
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
 DEFAULT_LIBRARY_DIR = APP_DIR / "Images telechargees"
 CONFIG_PATH = APP_DIR / "config.json"
 INSTANCE_LOCK_PATH = Path(tempfile.gettempdir()) / "WindowsSpotlightDownloader.lock"
@@ -400,6 +401,16 @@ INDEX_HTML = r"""<!doctype html>
     .source-link:hover {
       color: var(--accent);
     }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .app-logo {
+      width: 54px;
+      height: 54px;
+      flex: 0 0 auto;
+    }
     .title-block {
       display: grid;
       gap: 8px;
@@ -624,6 +635,8 @@ INDEX_HTML = r"""<!doctype html>
     .error { color: var(--danger); }
     @media (max-width: 760px) {
       .bar { grid-template-columns: 1fr; align-items: stretch; }
+      .brand { align-items: flex-start; }
+      .app-logo { width: 48px; height: 48px; }
       .controls { justify-content: stretch; }
       label, button { flex: 1 1 130px; }
       input[type="search"] { width: 100%; }
@@ -634,14 +647,17 @@ INDEX_HTML = r"""<!doctype html>
 <body>
   <header>
     <div class="bar">
-      <div class="title-block">
-        <h1>Windows Spotlight Downloader</h1>
-        <a class="source-link" href="https://windows10spotlight.com/" target="_blank" rel="noreferrer">Source: windows10spotlight.com</a>
-        <nav class="tabs" aria-label="Navigation">
-          <button id="imagesTab" class="tab active" type="button">Images</button>
-          <button id="configTab" class="tab" type="button">Config</button>
-        </nav>
-        <span class="app-version">Version 0.2.2</span>
+      <div class="brand">
+        <img class="app-logo" src="/assets/logo.svg" alt="" aria-hidden="true">
+        <div class="title-block">
+          <h1>Windows Spotlight Downloader</h1>
+          <a class="source-link" href="https://windows10spotlight.com/" target="_blank" rel="noreferrer">Source: windows10spotlight.com</a>
+          <nav class="tabs" aria-label="Navigation">
+            <button id="imagesTab" class="tab active" type="button">Images</button>
+            <button id="configTab" class="tab" type="button">Config</button>
+          </nav>
+          <span class="app-version">Version 0.2.3</span>
+        </div>
       </div>
       <div class="controls">
         <label>Page début <input id="start" type="number" min="1" value="1"></label>
@@ -1038,6 +1054,18 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: object) -> None:
         return
 
+    def send_asset(self, path: Path, content_type: str) -> None:
+        try:
+            body = path.read_bytes()
+        except FileNotFoundError:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def send_json(self, payload: object, status: int = 200) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
@@ -1055,6 +1083,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+            return
+
+        if parsed.path == "/assets/logo.svg":
+            self.send_asset(RESOURCE_DIR / "assets" / "logo.svg", "image/svg+xml; charset=utf-8")
             return
 
         if parsed.path == "/api/scan":

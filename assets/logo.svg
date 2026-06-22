@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Windows Spotlight Downloader Logo</title>
+  <desc id="desc">A minimal app icon showing a Windows-style frame with mountains, lake, and a spotlight beam.</desc>
+  <rect width="512" height="512" rx="96" fill="#f6f4ef"/>
+  <rect x="88" y="104" width="336" height="304" rx="42" fill="#ffffff" stroke="#1f2933" stroke-width="18"/>
+  <path d="M106 166h300" stroke="#d8dee4" stroke-width="18"/>
+  <circle cx="142" cy="136" r="12" fill="#0f766e"/>
+  <circle cx="180" cy="136" r="12" fill="#7ab7ad"/>
+  <circle cx="218" cy="136" r="12" fill="#f5c044"/>
+  <path d="M112 378l95-116 65 78 47-56 81 94z" fill="#0f766e"/>
+  <path d="M207 262l65 78 47-56 81 94H112z" fill="#24475f" opacity=".28"/>
+  <path d="M121 352c52-26 107-32 166-18 44 10 82 8 113-8v52H112z" fill="#7ab7ad"/>
+  <path d="M300 180l92-42-44 142z" fill="#f5c044" opacity=".86"/>
+  <circle cx="393" cy="138" r="28" fill="#f5c044"/>
+</svg>
