@@ -285,9 +285,18 @@ INDEX_HTML = r"""<!doctype html>
       line-height: 1.15;
       letter-spacing: 0;
     }
+    .source-link {
+      width: fit-content;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .source-link:hover {
+      color: var(--accent);
+    }
     .title-block {
       display: grid;
-      gap: 10px;
+      gap: 8px;
     }
     .tabs {
       display: flex;
@@ -464,6 +473,7 @@ INDEX_HTML = r"""<!doctype html>
     <div class="bar">
       <div class="title-block">
         <h1>Windows Spotlight Downloader</h1>
+        <a class="source-link" href="https://windows10spotlight.com/" target="_blank" rel="noreferrer">Source: windows10spotlight.com</a>
         <nav class="tabs" aria-label="Navigation">
           <button id="imagesTab" class="tab active" type="button">Images</button>
           <button id="configTab" class="tab" type="button">Config</button>

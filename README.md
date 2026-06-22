@@ -2,6 +2,8 @@
 
 Petit logiciel local pour choisir et télécharger les images de `windows10spotlight.com` en qualité originale.
 
+Source des images: [windows10spotlight.com](https://windows10spotlight.com/)
+
 ## Lancer
 
 Version portable: double-cliquer sur `WindowsSpotlightDownloader.exe`.
