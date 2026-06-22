@@ -931,6 +931,7 @@ INDEX_HTML = r"""<!doctype html>
       updateCounter();
     });
     checkForUpdates();
+    if (window.location.hash === "#config") showPage("config");
     loadBatch({reset: true});
   </script>
 </body>

@@ -6,6 +6,16 @@ Source des images: [windows10spotlight.com](https://windows10spotlight.com/)
 
 Version actuelle: `0.2.0`
 
+## Screenshots
+
+### Parcourir les images
+
+![Vue Images](docs/screenshots/images.png)
+
+### Configurer la bibliothèque
+
+![Vue Config](docs/screenshots/config.png)
+
 ## Lancer
 
 Version portable: double-cliquer sur `WindowsSpotlightDownloader.exe`.
