@@ -10,6 +10,22 @@ Source des images: [windows10spotlight.com](https://windows10spotlight.com/)
 
 Version actuelle: `0.2.6`
 
+## Installation
+
+Télécharger la version portable depuis la page des releases GitHub, puis lancer `WindowsSpotlightDownloader.exe`.
+
+1. Cliquer sur le bouton `Releases` du dépôt GitHub.
+
+   Capture à ajouter: `docs/screenshots/install-releases.png`
+
+   <!-- ![Bouton Releases](docs/screenshots/install-releases.png) -->
+
+2. Dans la dernière release, télécharger [WindowsSpotlightDownloader.exe](https://github.com/warnerbross1128/windows-spotlight-downloader/releases/download/v0.2.6/WindowsSpotlightDownloader.exe).
+
+   Capture à ajouter: `docs/screenshots/install-download-exe.png`
+
+   <!-- ![Bouton WindowsSpotlightDownloader.exe](docs/screenshots/install-download-exe.png) -->
+
 ## Screenshots
 
 ### Parcourir les images
