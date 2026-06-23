@@ -20,7 +20,7 @@ from pathlib import Path
 
 
 BASE_URL = "https://windows10spotlight.com"
-APP_VERSION = "0.2.4"
+APP_VERSION = "0.2.5"
 GITHUB_REPO = "warnerbross1128/windows-spotlight-downloader"
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
@@ -380,11 +380,11 @@ INDEX_HTML = r"""<!doctype html>
     .bar {
       max-width: 1280px;
       margin: 0 auto;
-      padding: 16px 20px;
+      padding: 12px 20px;
       display: grid;
       grid-template-columns: 1fr auto;
-      gap: 16px;
-      align-items: end;
+      gap: 14px;
+      align-items: center;
     }
     h1 {
       margin: 0;
@@ -444,10 +444,19 @@ INDEX_HTML = r"""<!doctype html>
     }
     .controls {
       display: flex;
-      gap: 8px;
-      align-items: end;
+      gap: 7px;
+      align-items: center;
       flex-wrap: wrap;
       justify-content: flex-end;
+    }
+    .controls label {
+      display: block;
+      font-size: 0;
+    }
+    .controls input {
+      min-height: 36px;
+      padding: 7px 9px;
+      font-size: 14px;
     }
     label {
       display: grid;
@@ -465,13 +474,13 @@ INDEX_HTML = r"""<!doctype html>
       color: var(--ink);
       background: var(--panel);
     }
-    input[type="number"] { width: 86px; }
-    input[type="search"] { width: min(38vw, 320px); }
+    input[type="number"] { width: 72px; }
+    input[type="search"] { width: min(28vw, 260px); }
     button {
-      min-height: 38px;
+      min-height: 36px;
       border: 1px solid transparent;
       border-radius: 6px;
-      padding: 8px 12px;
+      padding: 7px 11px;
       font: inherit;
       font-weight: 700;
       cursor: pointer;
@@ -660,7 +669,7 @@ INDEX_HTML = r"""<!doctype html>
           <div class="title-line">
             <h1>Windows Spotlight Downloader</h1>
             <a class="source-link" href="https://windows10spotlight.com/" target="_blank" rel="noreferrer">Source: windows10spotlight.com</a>
-            <span class="app-version">Version 0.2.4</span>
+            <span class="app-version">Version 0.2.5</span>
           </div>
           <nav class="tabs" aria-label="Navigation">
             <button id="imagesTab" class="tab active" type="button">Images</button>
@@ -669,9 +678,9 @@ INDEX_HTML = r"""<!doctype html>
         </div>
       </div>
       <div class="controls">
-        <label>Page début <input id="start" type="number" min="1" value="1"></label>
-        <label>Lot <input id="batchSize" type="number" min="1" max="20" value="3"></label>
-        <label>Filtre <input id="query" type="search" placeholder="island, forest, 2026-06"></label>
+        <label><input id="start" type="number" min="1" value="1" aria-label="Page début" title="Page début"></label>
+        <label><input id="batchSize" type="number" min="1" max="20" value="3" aria-label="Lot" title="Lot"></label>
+        <label><input id="query" type="search" placeholder="Filtre" aria-label="Filtre" title="Filtre"></label>
         <button id="scan">Scanner</button>
         <button id="selectAll" class="secondary">Tout cocher</button>
         <button id="download">Télécharger</button>
