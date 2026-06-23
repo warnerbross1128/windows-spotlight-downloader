@@ -8,7 +8,7 @@ Petit logiciel local pour choisir et télécharger les images de `windows10spotl
 
 Source des images: [windows10spotlight.com](https://windows10spotlight.com/)
 
-Version actuelle: `0.2.5`
+Version actuelle: `0.2.6`
 
 ## Screenshots
 

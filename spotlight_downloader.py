@@ -20,7 +20,7 @@ from pathlib import Path
 
 
 BASE_URL = "https://windows10spotlight.com"
-APP_VERSION = "0.2.5"
+APP_VERSION = "0.2.6"
 GITHUB_REPO = "warnerbross1128/windows-spotlight-downloader"
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
@@ -380,11 +380,10 @@ INDEX_HTML = r"""<!doctype html>
     .bar {
       max-width: 1280px;
       margin: 0 auto;
-      padding: 12px 20px;
-      display: grid;
-      grid-template-columns: 1fr auto;
+      padding: 12px 20px 14px;
+      display: flex;
+      align-items: flex-start;
       gap: 14px;
-      align-items: center;
     }
     h1 {
       margin: 0;
@@ -403,8 +402,9 @@ INDEX_HTML = r"""<!doctype html>
     }
     .brand {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 14px;
+      min-width: 0;
     }
     .app-logo {
       width: 54px;
@@ -412,6 +412,7 @@ INDEX_HTML = r"""<!doctype html>
       flex: 0 0 auto;
     }
     .title-block {
+      min-width: 0;
       display: grid;
       gap: 10px;
     }
@@ -447,7 +448,7 @@ INDEX_HTML = r"""<!doctype html>
       gap: 7px;
       align-items: center;
       flex-wrap: wrap;
-      justify-content: flex-end;
+      justify-content: flex-start;
     }
     .controls label {
       display: block;
@@ -649,8 +650,7 @@ INDEX_HTML = r"""<!doctype html>
     }
     .error { color: var(--danger); }
     @media (max-width: 760px) {
-      .bar { grid-template-columns: 1fr; align-items: stretch; }
-      .brand { align-items: flex-start; }
+      .bar { align-items: stretch; }
       .app-logo { width: 48px; height: 48px; }
       .title-line { align-items: flex-start; }
       .controls { justify-content: stretch; }
@@ -669,21 +669,21 @@ INDEX_HTML = r"""<!doctype html>
           <div class="title-line">
             <h1>Windows Spotlight Downloader</h1>
             <a class="source-link" href="https://windows10spotlight.com/" target="_blank" rel="noreferrer">Source: windows10spotlight.com</a>
-            <span class="app-version">Version 0.2.5</span>
+            <span class="app-version">Version 0.2.6</span>
           </div>
           <nav class="tabs" aria-label="Navigation">
             <button id="imagesTab" class="tab active" type="button">Images</button>
             <button id="configTab" class="tab" type="button">Config</button>
           </nav>
+          <div class="controls">
+            <label><input id="start" type="number" min="1" value="1" aria-label="Page début" title="Page début"></label>
+            <label><input id="batchSize" type="number" min="1" max="20" value="3" aria-label="Lot" title="Lot"></label>
+            <label><input id="query" type="search" placeholder="Filtre" aria-label="Filtre" title="Filtre"></label>
+            <button id="scan">Scanner</button>
+            <button id="selectAll" class="secondary">Tout cocher</button>
+            <button id="download">Télécharger</button>
+          </div>
         </div>
-      </div>
-      <div class="controls">
-        <label><input id="start" type="number" min="1" value="1" aria-label="Page début" title="Page début"></label>
-        <label><input id="batchSize" type="number" min="1" max="20" value="3" aria-label="Lot" title="Lot"></label>
-        <label><input id="query" type="search" placeholder="Filtre" aria-label="Filtre" title="Filtre"></label>
-        <button id="scan">Scanner</button>
-        <button id="selectAll" class="secondary">Tout cocher</button>
-        <button id="download">Télécharger</button>
       </div>
     </div>
   </header>
