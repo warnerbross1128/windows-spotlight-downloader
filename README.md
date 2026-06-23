@@ -56,6 +56,14 @@ Au démarrage, l'application vérifie la dernière release GitHub publique. Si u
 
 Pour publier une mise à jour, incrémenter la version dans `spotlight_downloader.py`, créer une nouvelle release GitHub, puis joindre `WindowsSpotlightDownloader.exe`.
 
+## Licence et avis légal
+
+Le code source de cette application est publié sous licence MIT. Voir le fichier [LICENSE](LICENSE).
+
+Les images Windows Spotlight ne sont pas incluses dans cette licence et appartiennent à leurs détenteurs respectifs. Ce projet n'est pas affilié à Microsoft ni à [windows10spotlight.com](https://windows10spotlight.com/).
+
+L'application sert uniquement d'outil de navigation et de téléchargement depuis le site source, pour usage personnel.
+
 ## Notes
 
 - Les vignettes WordPress comme `image-1024x576.jpg` sont converties vers l'URL originale `image.jpg`.
