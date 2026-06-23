@@ -20,9 +20,7 @@ Télécharger la version portable depuis la page des releases GitHub, puis lance
 
 2. Dans la dernière release, télécharger [WindowsSpotlightDownloader.exe](https://github.com/warnerbross1128/windows-spotlight-downloader/releases/download/v0.2.6/WindowsSpotlightDownloader.exe).
 
-   Capture à ajouter: `docs/screenshots/install-download-exe.png`
-
-   <!-- ![Bouton WindowsSpotlightDownloader.exe](docs/screenshots/install-download-exe.png) -->
+   ![Bouton WindowsSpotlightDownloader.exe](docs/screenshots/install-download-exe.png)
 
 ## Screenshots
 
