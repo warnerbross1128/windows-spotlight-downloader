@@ -16,9 +16,7 @@ Télécharger la version portable depuis la page des releases GitHub, puis lance
 
 1. Cliquer sur le bouton `Releases` du dépôt GitHub.
 
-   Capture à ajouter: `docs/screenshots/install-releases.png`
-
-   <!-- ![Bouton Releases](docs/screenshots/install-releases.png) -->
+   ![Bouton Releases](docs/screenshots/install-releases.png)
 
 2. Dans la dernière release, télécharger [WindowsSpotlightDownloader.exe](https://github.com/warnerbross1128/windows-spotlight-downloader/releases/download/v0.2.6/WindowsSpotlightDownloader.exe).
 
