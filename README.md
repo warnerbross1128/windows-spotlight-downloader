@@ -68,6 +68,7 @@ L'application sert uniquement d'outil de navigation et de téléchargement depui
 
 - Les vignettes WordPress comme `image-1024x576.jpg` sont converties vers l'URL originale `image.jpg`.
 - Le bouton `Original` ouvre l'image finale dans un nouvel onglet.
+- Le menu `Format` permet de télécharger la version paysage, portrait ou les deux quand le site propose plusieurs orientations.
 - Les images déjà présentes dans la bibliothèque sont signalées dans la grille et ignorées au téléchargement, y compris les variantes `-2`, `-3`, etc.
 - Le scan et le téléchargement affichent une barre de progression.
 - Le chargement se fait par lots. `Scanner` repart depuis la page de début, et `Charger plus` ajoute le lot suivant sans effacer les images déjà affichées.
