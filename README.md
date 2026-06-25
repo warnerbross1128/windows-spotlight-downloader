@@ -8,7 +8,7 @@ Petit logiciel local pour choisir et télécharger les images de `windows10spotl
 
 Source des images: [windows10spotlight.com](https://windows10spotlight.com/)
 
-Version actuelle: `0.2.6`
+Version actuelle: `0.3.0`
 
 ## Installation
 
@@ -18,7 +18,7 @@ Télécharger la version portable depuis la page des releases GitHub, puis lance
 
    ![Bouton Releases](docs/screenshots/install-releases.png)
 
-2. Dans la dernière release, télécharger [WindowsSpotlightDownloader.exe](https://github.com/warnerbross1128/windows-spotlight-downloader/releases/download/v0.2.6/WindowsSpotlightDownloader.exe).
+2. Dans la dernière release, télécharger [WindowsSpotlightDownloader.exe](https://github.com/warnerbross1128/windows-spotlight-downloader/releases/download/v0.3.0/WindowsSpotlightDownloader.exe).
 
    ![Bouton WindowsSpotlightDownloader.exe](docs/screenshots/install-download-exe.png)
 
