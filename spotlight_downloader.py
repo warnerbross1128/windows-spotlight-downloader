@@ -20,7 +20,7 @@ from pathlib import Path
 
 
 BASE_URL = "https://windows10spotlight.com"
-APP_VERSION = "0.3.0"
+APP_VERSION = "1.0.0"
 GITHUB_REPO = "warnerbross1128/windows-spotlight-downloader"
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
@@ -807,7 +807,7 @@ INDEX_HTML = r"""<!doctype html>
           <div class="title-line">
             <h1>Windows Spotlight Downloader</h1>
             <a class="source-link" href="https://windows10spotlight.com/" target="_blank" rel="noreferrer">Source: windows10spotlight.com</a>
-            <span class="app-version">Version 0.3.0</span>
+            <span class="app-version">Version 1.0.0</span>
           </div>
           <div class="action-row">
             <nav class="tabs" aria-label="Navigation">

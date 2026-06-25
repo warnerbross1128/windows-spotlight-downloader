@@ -10,7 +10,7 @@ Petit logiciel local pour parcourir, choisir et télécharger les images de `win
 
 Source des images : [windows10spotlight.com](https://windows10spotlight.com/)
 
-Version actuelle : `0.3.0`
+Version actuelle : `1.0.0`
 
 ## Fonctionnalités
 
@@ -30,16 +30,16 @@ Télécharger la version portable depuis la page des releases GitHub, puis lance
 
    ![Bouton Releases](docs/screenshots/install-releases.png)
 
-2. Dans la dernière release, télécharger [WindowsSpotlightDownloader.exe](https://github.com/warnerbross1128/windows-spotlight-downloader/releases/download/v0.3.0/WindowsSpotlightDownloader.exe).
+2. Dans la dernière release, télécharger [WindowsSpotlightDownloader.exe](https://github.com/warnerbross1128/windows-spotlight-downloader/releases/download/v1.0.0/WindowsSpotlightDownloader.exe).
 
    ![Bouton WindowsSpotlightDownloader.exe](docs/screenshots/install-download-exe.png)
 
 ## Vérifier le téléchargement
 
-Le SHA256 de `WindowsSpotlightDownloader.exe` pour la version `0.3.0` est :
+Le SHA256 de `WindowsSpotlightDownloader.exe` pour la version `1.0.0` est :
 
 ```text
-35837CD4188CF6077383D75173700E5F7E9B38CF744457DC54609D6A6F307082
+9E546159E24969928F98BC05D6E36FE62F4FD0970A6598F537EBFE1E088DB8DC
 ```
 
 Pour vérifier le fichier téléchargé avec PowerShell :
