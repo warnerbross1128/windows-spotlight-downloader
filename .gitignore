@@ -5,5 +5,7 @@ build/
 dist/
 Pack and go/
 *.spec
+!WindowsSpotlightDownloader.spec
 *.zip
 WindowsSpotlightDownloader-pack-and-go/
+ROADMAP.md

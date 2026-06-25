@@ -115,6 +115,31 @@ def fetch_json(url: str, timeout: int = 15) -> dict:
         return json.loads(response.read().decode("utf-8", errors="replace"))
 
 
+def user_error(exc: Exception, context: str = "operation") -> str:
+    if isinstance(exc, urllib.error.HTTPError):
+        if context == "scan":
+            return f"Le site source a répondu avec une erreur HTTP {exc.code}. Réessayez plus tard."
+        if context == "update":
+            return f"GitHub a répondu avec une erreur HTTP {exc.code} pendant la vérification de mise à jour."
+        return f"Erreur HTTP {exc.code}."
+    if isinstance(exc, urllib.error.URLError):
+        reason = getattr(exc, "reason", exc)
+        if context in {"scan", "download", "variants"}:
+            return f"Connexion impossible au site source. Vérifiez votre connexion, puis réessayez. Détail: {reason}"
+        if context == "update":
+            return f"Connexion impossible à GitHub pour vérifier les mises à jour. Détail: {reason}"
+        return f"Connexion impossible. Détail: {reason}"
+    if isinstance(exc, TimeoutError):
+        return "La requête a pris trop de temps. Vérifiez votre connexion, puis réessayez."
+    if isinstance(exc, PermissionError):
+        return "Accès refusé au dossier de bibliothèque. Choisissez un autre dossier ou vérifiez les permissions."
+    if isinstance(exc, OSError):
+        return f"Erreur fichier ou dossier: {exc}"
+    if isinstance(exc, json.JSONDecodeError):
+        return "Réponse invalide reçue par l'application."
+    return str(exc) or "Erreur inattendue."
+
+
 def version_parts(value: str) -> tuple[int, ...]:
     cleaned = value.strip().lstrip("vV")
     parts = []
@@ -371,7 +396,7 @@ def download_items(items: list[dict[str, str]]) -> list[dict[str, str]]:
             target.write_bytes(fetch_bytes(url))
             results.append({"ok": True, "skipped": False, "url": url, "path": str(target), "name": target.name})
         except Exception as exc:
-            results.append({"ok": False, "url": url, "error": str(exc)})
+            results.append({"ok": False, "url": url, "error": user_error(exc, "download")})
     return results
 
 
@@ -394,6 +419,13 @@ def pick_library_folder() -> str:
     finally:
         root.destroy()
     return selected
+
+
+def open_library_folder() -> str:
+    target = library_dir()
+    target.mkdir(parents=True, exist_ok=True)
+    os.startfile(str(target))
+    return str(target)
 
 
 INDEX_HTML = r"""<!doctype html>
@@ -640,6 +672,16 @@ INDEX_HTML = r"""<!doctype html>
       grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
       gap: 14px;
     }
+    .empty-state {
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      padding: 28px 18px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, .58);
+      text-align: center;
+      font-size: 14px;
+    }
+    .empty-state[hidden] { display: none; }
     .load-more-wrap {
       display: flex;
       justify-content: center;
@@ -830,6 +872,7 @@ INDEX_HTML = r"""<!doctype html>
       <div id="legacyProgressWrap" class="progress-wrap" hidden>
         <div id="legacyProgressBar" class="progress-bar"></div>
       </div>
+      <div id="emptyState" class="empty-state" hidden>Aucune image à afficher.</div>
       <section id="grid" class="grid"></section>
       <div class="load-more-wrap">
         <button id="loadMore" class="secondary" type="button">Charger plus</button>
@@ -845,6 +888,7 @@ INDEX_HTML = r"""<!doctype html>
           <span id="configStatus" class="status">Chargement de la configuration...</span>
           <div>
             <button id="pickFolder" class="secondary" type="button">Choisir</button>
+            <button id="openFolder" class="secondary" type="button">Ouvrir</button>
             <button id="saveConfig" type="button">Enregistrer</button>
           </div>
         </div>
@@ -853,6 +897,7 @@ INDEX_HTML = r"""<!doctype html>
   </main>
   <script>
     const grid = document.querySelector("#grid");
+    const emptyState = document.querySelector("#emptyState");
     const statusEl = document.querySelector("#status");
     const counterEl = document.querySelector("#counter");
     const scanBtn = document.querySelector("#scan");
@@ -868,6 +913,7 @@ INDEX_HTML = r"""<!doctype html>
     const libraryDirInput = document.querySelector("#libraryDir");
     const configStatusEl = document.querySelector("#configStatus");
     const pickFolderBtn = document.querySelector("#pickFolder");
+    const openFolderBtn = document.querySelector("#openFolder");
     const saveConfigBtn = document.querySelector("#saveConfig");
     const updateNotice = document.querySelector("#updateNotice");
     const updateText = document.querySelector("#updateText");
@@ -915,6 +961,15 @@ INDEX_HTML = r"""<!doctype html>
 
     function selectedItems() {
       return [...document.querySelectorAll(".pick:checked:not(:disabled)")].map(input => items[Number(input.dataset.index)]);
+    }
+
+    function showEmptyState(message) {
+      emptyState.textContent = message;
+      emptyState.hidden = false;
+    }
+
+    function hideEmptyState() {
+      emptyState.hidden = true;
     }
 
     async function variantsForItem(item) {
@@ -996,6 +1051,7 @@ INDEX_HTML = r"""<!doctype html>
       });
       const startIndex = items.length;
       items.push(...freshItems);
+      if (freshItems.length) hideEmptyState();
       for (const [offset, item] of freshItems.entries()) {
         const index = startIndex + offset;
         const article = document.createElement("article");
@@ -1037,6 +1093,7 @@ INDEX_HTML = r"""<!doctype html>
         items = [];
         seenUrls = new Set();
         grid.innerHTML = "";
+        hideEmptyState();
         nextPage = Number(document.querySelector("#start").value || 1);
         lastBatchSize = Number(document.querySelector("#batchSize").value || 1);
         lastQuery = document.querySelector("#query").value || "";
@@ -1062,6 +1119,9 @@ INDEX_HTML = r"""<!doctype html>
         }
         nextPage = start + pages;
         statusEl.textContent = `${items.length} image${items.length > 1 ? "s" : ""} affichée${items.length > 1 ? "s" : ""}. Dernier lot: ${added} nouvelle${added > 1 ? "s" : ""}. Prochaine page: ${nextPage}.`;
+        if (!items.length) {
+          showEmptyState(query ? "Aucune image ne correspond à cette recherche dans ce lot." : "Aucune image trouvée dans ce lot.");
+        }
       } catch (error) {
         statusEl.className = "error";
         statusEl.textContent = error.message;
@@ -1173,6 +1233,24 @@ INDEX_HTML = r"""<!doctype html>
       }
     }
 
+    async function openFolder() {
+      openFolderBtn.disabled = true;
+      configStatusEl.className = "status";
+      configStatusEl.textContent = "Ouverture du dossier...";
+      try {
+        const response = await fetch("/api/open-library", {method: "POST"});
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Ouverture impossible");
+        libraryDirInput.value = data.libraryDir || libraryDirInput.value;
+        configStatusEl.textContent = `Dossier ouvert: ${data.libraryDir}`;
+      } catch (error) {
+        configStatusEl.className = "status error";
+        configStatusEl.textContent = error.message;
+      } finally {
+        openFolderBtn.disabled = false;
+      }
+    }
+
     async function checkForUpdates() {
       try {
         const response = await fetch("/api/update-check");
@@ -1213,6 +1291,7 @@ INDEX_HTML = r"""<!doctype html>
     configTab.addEventListener("click", () => showPage("config"));
     saveConfigBtn.addEventListener("click", saveConfig);
     pickFolderBtn.addEventListener("click", pickFolder);
+    openFolderBtn.addEventListener("click", openFolder);
     selectAllBtn.addEventListener("click", () => {
       const picks = [...document.querySelectorAll(".pick:not(:disabled)")];
       const shouldCheck = picks.some(input => !input.checked);
@@ -1276,14 +1355,14 @@ class Handler(BaseHTTPRequestHandler):
                 items = mark_library_status(scan_pages(start, pages, query))
                 self.send_json({"items": items})
             except Exception as exc:
-                self.send_json({"error": str(exc)}, 500)
+                self.send_json({"error": user_error(exc, "scan")}, 500)
             return
 
         if parsed.path == "/api/config":
             try:
                 self.send_json(load_config())
             except Exception as exc:
-                self.send_json({"error": str(exc)}, 500)
+                self.send_json({"error": user_error(exc, "config")}, 500)
             return
 
         if parsed.path == "/api/variants":
@@ -1292,7 +1371,7 @@ class Handler(BaseHTTPRequestHandler):
                 post_url = params.get("postUrl", [""])[0]
                 self.send_json({"items": post_variants(post_url)})
             except Exception as exc:
-                self.send_json({"error": str(exc)}, 500)
+                self.send_json({"error": user_error(exc, "variants")}, 500)
             return
 
         if parsed.path == "/api/version":
@@ -1303,7 +1382,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 self.send_json(check_for_update())
             except Exception as exc:
-                self.send_json({"error": str(exc)}, 500)
+                self.send_json({"error": user_error(exc, "update")}, 500)
             return
 
         if parsed.path == "/proxy":
@@ -1336,7 +1415,7 @@ class Handler(BaseHTTPRequestHandler):
                 results = download_items(payload.get("items", []))
                 self.send_json({"folder": str(library_dir()), "results": results})
             except Exception as exc:
-                self.send_json({"error": str(exc)}, 500)
+                self.send_json({"error": user_error(exc, "download")}, 500)
             return
 
         if path == "/api/config":
@@ -1345,7 +1424,7 @@ class Handler(BaseHTTPRequestHandler):
                 payload = json.loads(self.rfile.read(length).decode("utf-8"))
                 self.send_json(save_config(payload))
             except Exception as exc:
-                self.send_json({"error": str(exc)}, 500)
+                self.send_json({"error": user_error(exc, "config")}, 500)
             return
 
         if path == "/api/library-status":
@@ -1354,7 +1433,7 @@ class Handler(BaseHTTPRequestHandler):
                 payload = json.loads(self.rfile.read(length).decode("utf-8"))
                 self.send_json({"items": mark_library_status(payload.get("items", []))})
             except Exception as exc:
-                self.send_json({"error": str(exc)}, 500)
+                self.send_json({"error": user_error(exc, "library")}, 500)
             return
 
         if path == "/api/pick-folder":
@@ -1362,7 +1441,14 @@ class Handler(BaseHTTPRequestHandler):
                 selected = pick_library_folder()
                 self.send_json({"libraryDir": selected})
             except Exception as exc:
-                self.send_json({"error": str(exc)}, 500)
+                self.send_json({"error": user_error(exc, "config")}, 500)
+            return
+
+        if path == "/api/open-library":
+            try:
+                self.send_json({"libraryDir": open_library_folder()})
+            except Exception as exc:
+                self.send_json({"error": user_error(exc, "config")}, 500)
             return
 
         self.send_error(HTTPStatus.NOT_FOUND)
