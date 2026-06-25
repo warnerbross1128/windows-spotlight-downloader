@@ -185,6 +185,10 @@ def strip_tags(value: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", value)).strip()
 
 
+def attr_value(tag: str, name: str) -> str:
+    return first_match(rf'\b{name}=["\']([^"\']+)["\']', tag)
+
+
 def slugify(value: str, fallback: str) -> str:
     value = html.unescape(value)
     value = re.sub(r"[^\w\s.-]", "", value, flags=re.UNICODE)
@@ -220,6 +224,7 @@ def parse_images(document: str) -> list[dict[str, str]]:
                 "id": Path(file_name).stem,
                 "title": title or Path(file_name).stem,
                 "date": date,
+                "orientation": "landscape",
                 "thumbUrl": normalize_original_url(src) if src else final_url,
                 "previewUrl": src or final_url,
                 "finalUrl": final_url,
@@ -228,6 +233,52 @@ def parse_images(document: str) -> list[dict[str, str]]:
             }
         )
     return items
+
+
+def parse_post_variants(document: str, post_url: str = "") -> list[dict[str, str]]:
+    article = first_match(r"(<article\b.*?</article>)", document)
+    if not article:
+        return []
+
+    title = strip_tags(first_match(r"<h1[^>]*>(.*?)</h1>", article))
+    date = strip_tags(first_match(r'<span[^>]*class=["\'][^"\']*date[^"\']*["\'][^>]*>(.*?)</span>', article))
+    entry = first_match(r'<div class=["\']entry["\'][^>]*>(.*?)(?:<div class=["\']html-after-content|</article>)', article)
+    if not entry:
+        return []
+
+    items: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for link, image_tag in re.findall(r'<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>\s*(<img\b[^>]+>)', entry, flags=re.I | re.S):
+        final_url = normalize_original_url(link)
+        if not final_url.startswith(BASE_URL + "/wp-content/uploads/") or final_url in seen:
+            continue
+
+        width = int(attr_value(image_tag, "width") or "0")
+        height = int(attr_value(image_tag, "height") or "0")
+        orientation = "portrait" if height > width else "landscape"
+        src = attr_value(image_tag, "src") or final_url
+        file_name = Path(urllib.parse.urlsplit(final_url).path).name
+        seen.add(final_url)
+        items.append(
+            {
+                "id": f"{Path(file_name).stem}-{orientation}",
+                "title": title or Path(file_name).stem,
+                "date": date,
+                "orientation": orientation,
+                "thumbUrl": normalize_original_url(src),
+                "previewUrl": src,
+                "finalUrl": final_url,
+                "postUrl": post_url,
+                "fileName": file_name,
+            }
+        )
+    return items
+
+
+def post_variants(post_url: str) -> list[dict[str, str]]:
+    if not post_url.startswith(BASE_URL + "/images/"):
+        raise ValueError("URL de page refusée.")
+    return mark_library_status(parse_post_variants(fetch_text(post_url), post_url))
 
 
 def scan_pages(start: int, pages: int, query: str = "", delay: float = 1.0) -> list[dict[str, str]]:
@@ -256,6 +307,8 @@ def target_path_for_item(item: dict[str, str], target_dir: Path | None = None) -
     extension = Path(urllib.parse.urlsplit(url).path).suffix or ".jpg"
     date = slugify(item.get("date", ""), "spotlight")
     title = slugify(item.get("title", ""), Path(urllib.parse.urlsplit(url).path).stem)
+    if item.get("orientation") == "portrait":
+        title = f"{title}-portrait"
     file_name = f"{date}-{title}{extension}" if date else f"{title}{extension}"
     return target_dir / file_name
 
@@ -414,7 +467,8 @@ INDEX_HTML = r"""<!doctype html>
     .title-block {
       min-width: 0;
       display: grid;
-      gap: 10px;
+      gap: 8px;
+      flex: 1 1 auto;
     }
     .title-line {
       display: flex;
@@ -425,6 +479,13 @@ INDEX_HTML = r"""<!doctype html>
     .tabs {
       display: flex;
       gap: 6px;
+      flex: 0 0 auto;
+    }
+    .title-block > .tabs,
+    .title-block > .controls,
+    #imagesPage > .status,
+    #imagesPage > .progress-wrap {
+      display: none;
     }
     .app-version {
       color: var(--muted);
@@ -450,11 +511,19 @@ INDEX_HTML = r"""<!doctype html>
       flex-wrap: wrap;
       justify-content: flex-start;
     }
-    .controls label {
-      display: block;
-      font-size: 0;
+    .action-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      flex-wrap: wrap;
     }
-    .controls input {
+    .controls label {
+      display: grid;
+      gap: 3px;
+      font-size: 12px;
+    }
+    .controls input,
+    .controls select {
       min-height: 36px;
       padding: 7px 9px;
       font-size: 14px;
@@ -466,7 +535,8 @@ INDEX_HTML = r"""<!doctype html>
       color: var(--muted);
       font-weight: 600;
     }
-    input {
+    input,
+    select {
       min-height: 38px;
       border: 1px solid var(--line);
       border-radius: 6px;
@@ -477,6 +547,7 @@ INDEX_HTML = r"""<!doctype html>
     }
     input[type="number"] { width: 72px; }
     input[type="search"] { width: min(28vw, 260px); }
+    select { min-width: 118px; }
     button {
       min-height: 36px;
       border: 1px solid transparent;
@@ -527,12 +598,35 @@ INDEX_HTML = r"""<!doctype html>
       gap: 12px;
       margin-bottom: 14px;
     }
+    .header-status {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px 14px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 14px;
+      min-height: 24px;
+    }
+    .header-status #status {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .header-status #counter {
+      white-space: nowrap;
+      font-weight: 700;
+    }
     .progress-wrap {
       height: 8px;
       overflow: hidden;
       border-radius: 999px;
       background: var(--line);
       margin: -4px 0 14px;
+    }
+    .header-status .progress-wrap {
+      grid-column: 1 / -1;
+      margin: 0;
     }
     .progress-bar {
       width: 0%;
@@ -653,9 +747,11 @@ INDEX_HTML = r"""<!doctype html>
       .bar { align-items: stretch; }
       .app-logo { width: 48px; height: 48px; }
       .title-line { align-items: flex-start; }
+      .action-row { align-items: stretch; }
       .controls { justify-content: stretch; }
-      label, button { flex: 1 1 130px; }
+      label, button, select { flex: 1 1 130px; }
       input[type="search"] { width: 100%; }
+      .header-status { grid-template-columns: 1fr; }
       .config-row { grid-template-columns: 1fr; }
     }
   </style>
@@ -671,17 +767,51 @@ INDEX_HTML = r"""<!doctype html>
             <a class="source-link" href="https://windows10spotlight.com/" target="_blank" rel="noreferrer">Source: windows10spotlight.com</a>
             <span class="app-version">Version 0.2.6</span>
           </div>
+          <div class="action-row">
+            <nav class="tabs" aria-label="Navigation">
+              <button id="imagesTab" class="tab active" type="button">Images</button>
+              <button id="configTab" class="tab" type="button">Config</button>
+            </nav>
+            <div class="controls">
+              <label>Page
+                <input id="start" type="number" min="1" value="1" aria-label="Page de dÃ©but" title="Page de dÃ©but">
+              </label>
+              <label>Lot
+                <input id="batchSize" type="number" min="1" max="20" value="3" aria-label="Nombre de pages affichÃ©es" title="Nombre de pages affichÃ©es">
+              </label>
+              <label>Filtre
+                <input id="query" type="search" placeholder="Filtre" aria-label="Filtre" title="Filtre">
+              </label>
+              <label>Format
+                <select id="downloadMode" aria-label="Format Ã  tÃ©lÃ©charger" title="Format Ã  tÃ©lÃ©charger">
+                  <option value="landscape">Paysage</option>
+                  <option value="portrait">Portrait</option>
+                  <option value="both">Les deux</option>
+                </select>
+              </label>
+              <button id="scan">Scanner</button>
+              <button id="selectAll" class="secondary">Tout cocher</button>
+              <button id="download">TÃ©lÃ©charger</button>
+            </div>
+          </div>
+          <div class="header-status">
+            <span id="status">PrÃªt.</span>
+            <span id="counter">0 sÃ©lectionnÃ©e</span>
+            <div id="progressWrap" class="progress-wrap" hidden>
+              <div id="progressBar" class="progress-bar"></div>
+            </div>
+          </div>
           <nav class="tabs" aria-label="Navigation">
-            <button id="imagesTab" class="tab active" type="button">Images</button>
-            <button id="configTab" class="tab" type="button">Config</button>
+            <button id="legacyImagesTab" class="tab active" type="button">Images</button>
+            <button id="legacyConfigTab" class="tab" type="button">Config</button>
           </nav>
           <div class="controls">
-            <label><input id="start" type="number" min="1" value="1" aria-label="Page début" title="Page début"></label>
-            <label><input id="batchSize" type="number" min="1" max="20" value="3" aria-label="Lot" title="Lot"></label>
-            <label><input id="query" type="search" placeholder="Filtre" aria-label="Filtre" title="Filtre"></label>
-            <button id="scan">Scanner</button>
-            <button id="selectAll" class="secondary">Tout cocher</button>
-            <button id="download">Télécharger</button>
+            <label><input id="legacyStart" type="number" min="1" value="1" aria-label="Page début" title="Page début"></label>
+            <label><input id="legacyBatchSize" type="number" min="1" max="20" value="3" aria-label="Lot" title="Lot"></label>
+            <label><input id="legacyQuery" type="search" placeholder="Filtre" aria-label="Filtre" title="Filtre"></label>
+            <button id="legacyScan">Scanner</button>
+            <button id="legacySelectAll" class="secondary">Tout cocher</button>
+            <button id="legacyDownload">Télécharger</button>
           </div>
         </div>
       </div>
@@ -694,11 +824,11 @@ INDEX_HTML = r"""<!doctype html>
     </div>
     <section id="imagesPage" class="page">
       <div class="status">
-        <span id="status">Prêt.</span>
-        <span id="counter">0 sélectionnée</span>
+        <span id="legacyStatus">Prêt.</span>
+        <span id="legacyCounter">0 sélectionnée</span>
       </div>
-      <div id="progressWrap" class="progress-wrap" hidden>
-        <div id="progressBar" class="progress-bar"></div>
+      <div id="legacyProgressWrap" class="progress-wrap" hidden>
+        <div id="legacyProgressBar" class="progress-bar"></div>
       </div>
       <section id="grid" class="grid"></section>
       <div class="load-more-wrap">
@@ -729,6 +859,7 @@ INDEX_HTML = r"""<!doctype html>
     const loadMoreBtn = document.querySelector("#loadMore");
     const downloadBtn = document.querySelector("#download");
     const selectAllBtn = document.querySelector("#selectAll");
+    const downloadModeEl = document.querySelector("#downloadMode");
     const imagesTab = document.querySelector("#imagesTab");
     const configTab = document.querySelector("#configTab");
     const imagesPage = document.querySelector("#imagesPage");
@@ -748,6 +879,7 @@ INDEX_HTML = r"""<!doctype html>
     let nextPage = 1;
     let lastBatchSize = 3;
     let lastQuery = "";
+    const variantCache = new Map();
 
     function showPage(page) {
       const showConfig = page === "config";
@@ -783,6 +915,33 @@ INDEX_HTML = r"""<!doctype html>
 
     function selectedItems() {
       return [...document.querySelectorAll(".pick:checked:not(:disabled)")].map(input => items[Number(input.dataset.index)]);
+    }
+
+    async function variantsForItem(item) {
+      if (!item.postUrl) return [item];
+      if (variantCache.has(item.postUrl)) return variantCache.get(item.postUrl);
+      const response = await fetch(`/api/variants?postUrl=${encodeURIComponent(item.postUrl)}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Variantes introuvables");
+      const variants = data.items?.length ? data.items : [item];
+      variantCache.set(item.postUrl, variants);
+      return variants;
+    }
+
+    async function downloadItemsForSelection(chosen) {
+      const mode = downloadModeEl.value;
+      if (mode === "landscape") return chosen;
+
+      const resolved = [];
+      for (const [index, item] of chosen.entries()) {
+        statusEl.textContent = `Recherche des formats ${index + 1}/${chosen.length}...`;
+        setProgress(index, chosen.length);
+        const variants = await variantsForItem(item);
+        const wanted = variants.filter(variant => mode === "both" || variant.orientation === mode);
+        resolved.push(...(wanted.length ? wanted : [item]));
+      }
+      setProgress(chosen.length, chosen.length);
+      return resolved;
     }
 
     function updateCounter() {
@@ -921,11 +1080,12 @@ INDEX_HTML = r"""<!doctype html>
       statusEl.className = "";
       statusEl.textContent = "Téléchargement...";
       try {
+        const downloads = await downloadItemsForSelection(chosen);
         const results = [];
         let folder = "";
-        for (const [index, item] of chosen.entries()) {
-          setProgress(index, chosen.length);
-          statusEl.textContent = `Téléchargement ${index + 1}/${chosen.length}...`;
+        for (const [index, item] of downloads.entries()) {
+          setProgress(index, downloads.length);
+          statusEl.textContent = `Téléchargement ${index + 1}/${downloads.length}...`;
           const response = await fetch("/api/download", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
@@ -935,7 +1095,7 @@ INDEX_HTML = r"""<!doctype html>
           if (!response.ok) throw new Error(data.error || "Téléchargement impossible");
           folder = data.folder || folder;
           results.push(...data.results);
-          setProgress(index + 1, chosen.length);
+          setProgress(index + 1, downloads.length);
         }
         const saved = results.filter(item => item.ok && !item.skipped);
         const skipped = results.filter(item => item.ok && item.skipped);
@@ -1122,6 +1282,15 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/config":
             try:
                 self.send_json(load_config())
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 500)
+            return
+
+        if parsed.path == "/api/variants":
+            params = urllib.parse.parse_qs(parsed.query)
+            try:
+                post_url = params.get("postUrl", [""])[0]
+                self.send_json({"items": post_variants(post_url)})
             except Exception as exc:
                 self.send_json({"error": str(exc)}, 500)
             return
