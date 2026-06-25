@@ -774,16 +774,16 @@ INDEX_HTML = r"""<!doctype html>
             </nav>
             <div class="controls">
               <label>Page
-                <input id="start" type="number" min="1" value="1" aria-label="Page de dÃ©but" title="Page de dÃ©but">
+                <input id="start" type="number" min="1" value="1" aria-label="Page de début" title="Page de début">
               </label>
               <label>Lot
-                <input id="batchSize" type="number" min="1" max="20" value="3" aria-label="Nombre de pages affichÃ©es" title="Nombre de pages affichÃ©es">
+                <input id="batchSize" type="number" min="1" max="20" value="3" aria-label="Nombre de pages affichées" title="Nombre de pages affichées">
               </label>
               <label>Filtre
                 <input id="query" type="search" placeholder="Filtre" aria-label="Filtre" title="Filtre">
               </label>
               <label>Format
-                <select id="downloadMode" aria-label="Format Ã  tÃ©lÃ©charger" title="Format Ã  tÃ©lÃ©charger">
+                <select id="downloadMode" aria-label="Format à télécharger" title="Format à télécharger">
                   <option value="landscape">Paysage</option>
                   <option value="portrait">Portrait</option>
                   <option value="both">Les deux</option>
@@ -791,12 +791,12 @@ INDEX_HTML = r"""<!doctype html>
               </label>
               <button id="scan">Scanner</button>
               <button id="selectAll" class="secondary">Tout cocher</button>
-              <button id="download">TÃ©lÃ©charger</button>
+              <button id="download">Télécharger</button>
             </div>
           </div>
           <div class="header-status">
-            <span id="status">PrÃªt.</span>
-            <span id="counter">0 sÃ©lectionnÃ©e</span>
+            <span id="status">Prêt.</span>
+            <span id="counter">0 sélectionnée</span>
             <div id="progressWrap" class="progress-wrap" hidden>
               <div id="progressBar" class="progress-bar"></div>
             </div>
