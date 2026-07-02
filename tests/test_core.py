@@ -1,6 +1,8 @@
 from pathlib import Path
 import tempfile
 import unittest
+import urllib.error
+from unittest.mock import patch
 
 import spotlight_downloader as app
 
@@ -46,6 +48,57 @@ class CoreHelpersTest(unittest.TestCase):
                 app.library_match_for_item(item, library),
                 library / "June-25-2026-Maligne-Lake-2.jpg",
             )
+
+    def test_load_config_defaults_to_english(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "missing-config.json"
+
+            with patch.object(app, "CONFIG_PATH", config_path):
+                config = app.load_config()
+
+            self.assertEqual(config["language"], "en")
+
+    def test_save_config_persists_supported_language(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            library = Path(tmp) / "Library"
+
+            with patch.object(app, "CONFIG_PATH", config_path):
+                config = app.save_config({"libraryDir": str(library), "language": "fr"})
+
+            self.assertEqual(config["language"], "fr")
+
+    def test_save_config_falls_back_to_english_for_unknown_language(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            library = Path(tmp) / "Library"
+
+            with patch.object(app, "CONFIG_PATH", config_path):
+                config = app.save_config({"libraryDir": str(library), "language": "de"})
+
+            self.assertEqual(config["language"], "en")
+
+    def test_save_config_empty_library_error_uses_requested_language(self):
+        with self.assertRaisesRegex(ValueError, "library folder is empty"):
+            app.save_config({"libraryDir": "", "language": "en"})
+
+        with self.assertRaisesRegex(ValueError, "bibliothèque est vide"):
+            app.save_config({"libraryDir": "", "language": "fr"})
+
+    def test_user_error_can_be_returned_in_english_or_french(self):
+        error = urllib.error.HTTPError("https://example.com", 503, "Unavailable", {}, None)
+
+        self.assertIn("source website returned HTTP error 503", app.user_error(error, "scan", "en"))
+        self.assertIn("site source a répondu avec une erreur HTTP 503", app.user_error(error, "scan", "fr"))
+
+    def test_runtime_translation_uses_config_language(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            library = Path(tmp) / "Library"
+
+            with patch.object(app, "CONFIG_PATH", config_path):
+                app.save_config({"libraryDir": str(library), "language": "fr"})
+                self.assertEqual(app.tr("errors.image_url_refused"), "URL refusée")
 
 
 if __name__ == "__main__":

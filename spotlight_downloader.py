@@ -20,12 +20,14 @@ from pathlib import Path
 
 
 BASE_URL = "https://windows10spotlight.com"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 GITHUB_REPO = "warnerbross1128/windows-spotlight-downloader"
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
 DEFAULT_LIBRARY_DIR = APP_DIR / "Images telechargees"
 CONFIG_PATH = APP_DIR / "config.json"
+DEFAULT_LANGUAGE = "en"
+SUPPORTED_LANGUAGES = {"en", "fr"}
 INSTANCE_LOCK_PATH = Path(tempfile.gettempdir()) / "WindowsSpotlightDownloader.lock"
 INSTANCE_LOCK_FILE = None
 USER_AGENT = (
@@ -33,9 +35,69 @@ USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
 )
 
+SERVER_I18N = {
+    "en": {
+        "errors.empty_library": "The library folder is empty.",
+        "errors.http_scan": "The source website returned HTTP error {code}. Please try again later.",
+        "errors.http_update": "GitHub returned HTTP error {code} while checking for updates.",
+        "errors.http": "HTTP error {code}.",
+        "errors.source_connection": "Could not connect to the source website. Check your connection, then try again. Detail: {reason}",
+        "errors.github_connection": "Could not connect to GitHub to check for updates. Detail: {reason}",
+        "errors.connection": "Connection failed. Detail: {reason}",
+        "errors.timeout": "The request took too long. Check your connection, then try again.",
+        "errors.permission": "Access to the library folder was denied. Choose another folder or check permissions.",
+        "errors.file": "File or folder error: {error}",
+        "errors.invalid_response": "The application received an invalid response.",
+        "errors.unexpected": "Unexpected error.",
+        "errors.page_url_refused": "Page URL refused.",
+        "errors.image_url_refused": "URL refused",
+        "errors.folder_picker_unavailable": "The graphical folder picker is not available.",
+        "folder_picker.title": "Choose the Windows Spotlight library",
+        "single_instance.message": "Windows Spotlight Downloader is already open. Close the other window before starting a new one.",
+        "logs.output_folder": "Output folder: {folder}",
+        "logs.stopped": "Stopped.",
+    },
+    "fr": {
+        "errors.empty_library": "Le dossier de bibliothèque est vide.",
+        "errors.http_scan": "Le site source a répondu avec une erreur HTTP {code}. Réessayez plus tard.",
+        "errors.http_update": "GitHub a répondu avec une erreur HTTP {code} pendant la vérification de mise à jour.",
+        "errors.http": "Erreur HTTP {code}.",
+        "errors.source_connection": "Connexion impossible au site source. Vérifiez votre connexion, puis réessayez. Détail: {reason}",
+        "errors.github_connection": "Connexion impossible à GitHub pour vérifier les mises à jour. Détail: {reason}",
+        "errors.connection": "Connexion impossible. Détail: {reason}",
+        "errors.timeout": "La requête a pris trop de temps. Vérifiez votre connexion, puis réessayez.",
+        "errors.permission": "Accès refusé au dossier de bibliothèque. Choisissez un autre dossier ou vérifiez les permissions.",
+        "errors.file": "Erreur fichier ou dossier: {error}",
+        "errors.invalid_response": "Réponse invalide reçue par l'application.",
+        "errors.unexpected": "Erreur inattendue.",
+        "errors.page_url_refused": "URL de page refusée.",
+        "errors.image_url_refused": "URL refusée",
+        "errors.folder_picker_unavailable": "La sélection graphique de dossier n'est pas disponible.",
+        "folder_picker.title": "Choisir la bibliothèque Windows Spotlight",
+        "single_instance.message": "Windows Spotlight Downloader est déjà ouvert. Fermez l'autre fenêtre avant d'en lancer une nouvelle.",
+        "logs.output_folder": "Dossier de sortie: {folder}",
+        "logs.stopped": "Arrêt.",
+    },
+}
+
+
+def normalize_language(language: str) -> str:
+    language = str(language).strip().lower()
+    return language if language in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
+
+
+def current_language() -> str:
+    return normalize_language(load_config().get("language", DEFAULT_LANGUAGE))
+
+
+def tr(key: str, language: str | None = None, **values: object) -> str:
+    language = normalize_language(language or current_language())
+    template = SERVER_I18N.get(language, SERVER_I18N[DEFAULT_LANGUAGE]).get(key, SERVER_I18N[DEFAULT_LANGUAGE].get(key, key))
+    return template.format(**values)
+
 
 def load_config() -> dict[str, str]:
-    config = {"libraryDir": str(DEFAULT_LIBRARY_DIR)}
+    config = {"libraryDir": str(DEFAULT_LIBRARY_DIR), "language": DEFAULT_LANGUAGE}
     if not CONFIG_PATH.exists():
         return config
     try:
@@ -45,17 +107,20 @@ def load_config() -> dict[str, str]:
     library_dir = str(data.get("libraryDir", "")).strip()
     if library_dir:
         config["libraryDir"] = library_dir
+    config["language"] = normalize_language(data.get("language", DEFAULT_LANGUAGE))
     return config
 
 
 def save_config(config: dict[str, str]) -> dict[str, str]:
-    library_dir = Path(config.get("libraryDir", "")).expanduser()
-    if not str(library_dir).strip():
-        raise ValueError("Le dossier de bibliothèque est vide.")
+    language = normalize_language(config.get("language", DEFAULT_LANGUAGE))
+    library_dir_value = str(config.get("libraryDir", "")).strip()
+    if not library_dir_value:
+        raise ValueError(tr("errors.empty_library", language))
+    library_dir = Path(library_dir_value).expanduser()
     if not library_dir.is_absolute():
         library_dir = APP_DIR / library_dir
     library_dir.mkdir(parents=True, exist_ok=True)
-    normalized = {"libraryDir": str(library_dir.resolve())}
+    normalized = {"libraryDir": str(library_dir.resolve()), "language": language}
     CONFIG_PATH.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
     return normalized
 
@@ -115,29 +180,29 @@ def fetch_json(url: str, timeout: int = 15) -> dict:
         return json.loads(response.read().decode("utf-8", errors="replace"))
 
 
-def user_error(exc: Exception, context: str = "operation") -> str:
+def user_error(exc: Exception, context: str = "operation", language: str | None = None) -> str:
     if isinstance(exc, urllib.error.HTTPError):
         if context == "scan":
-            return f"Le site source a répondu avec une erreur HTTP {exc.code}. Réessayez plus tard."
+            return tr("errors.http_scan", language, code=exc.code)
         if context == "update":
-            return f"GitHub a répondu avec une erreur HTTP {exc.code} pendant la vérification de mise à jour."
-        return f"Erreur HTTP {exc.code}."
+            return tr("errors.http_update", language, code=exc.code)
+        return tr("errors.http", language, code=exc.code)
     if isinstance(exc, urllib.error.URLError):
         reason = getattr(exc, "reason", exc)
         if context in {"scan", "download", "variants"}:
-            return f"Connexion impossible au site source. Vérifiez votre connexion, puis réessayez. Détail: {reason}"
+            return tr("errors.source_connection", language, reason=reason)
         if context == "update":
-            return f"Connexion impossible à GitHub pour vérifier les mises à jour. Détail: {reason}"
-        return f"Connexion impossible. Détail: {reason}"
+            return tr("errors.github_connection", language, reason=reason)
+        return tr("errors.connection", language, reason=reason)
     if isinstance(exc, TimeoutError):
-        return "La requête a pris trop de temps. Vérifiez votre connexion, puis réessayez."
+        return tr("errors.timeout", language)
     if isinstance(exc, PermissionError):
-        return "Accès refusé au dossier de bibliothèque. Choisissez un autre dossier ou vérifiez les permissions."
+        return tr("errors.permission", language)
     if isinstance(exc, OSError):
-        return f"Erreur fichier ou dossier: {exc}"
+        return tr("errors.file", language, error=exc)
     if isinstance(exc, json.JSONDecodeError):
-        return "Réponse invalide reçue par l'application."
-    return str(exc) or "Erreur inattendue."
+        return tr("errors.invalid_response", language)
+    return str(exc) or tr("errors.unexpected", language)
 
 
 def version_parts(value: str) -> tuple[int, ...]:
@@ -302,7 +367,7 @@ def parse_post_variants(document: str, post_url: str = "") -> list[dict[str, str
 
 def post_variants(post_url: str) -> list[dict[str, str]]:
     if not post_url.startswith(BASE_URL + "/images/"):
-        raise ValueError("URL de page refusée.")
+        raise ValueError(tr("errors.page_url_refused"))
     return mark_library_status(parse_post_variants(fetch_text(post_url), post_url))
 
 
@@ -383,7 +448,7 @@ def download_items(items: list[dict[str, str]]) -> list[dict[str, str]]:
     for item in items:
         url = item.get("finalUrl", "")
         if not url.startswith(BASE_URL + "/wp-content/uploads/"):
-            results.append({"ok": False, "url": url, "error": "URL refusée"})
+            results.append({"ok": False, "url": url, "error": tr("errors.image_url_refused")})
             continue
 
         existing = library_match_for_item(item, target_dir)
@@ -405,14 +470,14 @@ def pick_library_folder() -> str:
         import tkinter as tk
         from tkinter import filedialog
     except ImportError as exc:
-        raise RuntimeError("La sélection graphique de dossier n'est pas disponible.") from exc
+        raise RuntimeError(tr("errors.folder_picker_unavailable")) from exc
 
     root = tk.Tk()
     root.withdraw()
     root.attributes("-topmost", True)
     try:
         selected = filedialog.askdirectory(
-            title="Choisir la bibliothèque Windows Spotlight",
+            title=tr("folder_picker.title"),
             initialdir=str(library_dir()),
             mustexist=False,
         )
@@ -429,7 +494,7 @@ def open_library_folder() -> str:
 
 
 INDEX_HTML = r"""<!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -807,53 +872,53 @@ INDEX_HTML = r"""<!doctype html>
           <div class="title-line">
             <h1>Windows Spotlight Downloader</h1>
             <a class="source-link" href="https://windows10spotlight.com/" target="_blank" rel="noreferrer">Source: windows10spotlight.com</a>
-            <span class="app-version">Version 1.0.0</span>
+            <span class="app-version">Version 1.1.0</span>
           </div>
           <div class="action-row">
             <nav class="tabs" aria-label="Navigation">
-              <button id="imagesTab" class="tab active" type="button">Images</button>
-              <button id="configTab" class="tab" type="button">Config</button>
+              <button id="imagesTab" class="tab active" type="button" data-i18n="tabs.images">Images</button>
+              <button id="configTab" class="tab" type="button" data-i18n="tabs.config">Config</button>
             </nav>
             <div class="controls">
-              <label>Page
-                <input id="start" type="number" min="1" value="1" aria-label="Page de début" title="Page de début">
+              <label><span data-i18n="controls.page">Page</span>
+                <input id="start" type="number" min="1" value="1" aria-label="Start page" title="Start page" data-i18n-aria-label="controls.startPage" data-i18n-title="controls.startPage">
               </label>
-              <label>Lot
-                <input id="batchSize" type="number" min="1" max="20" value="3" aria-label="Nombre de pages affichées" title="Nombre de pages affichées">
+              <label><span data-i18n="controls.batch">Batch</span>
+                <input id="batchSize" type="number" min="1" max="20" value="3" aria-label="Number of pages shown" title="Number of pages shown" data-i18n-aria-label="controls.batchSize" data-i18n-title="controls.batchSize">
               </label>
-              <label>Filtre
-                <input id="query" type="search" placeholder="Filtre" aria-label="Filtre" title="Filtre">
+              <label><span data-i18n="controls.filter">Filter</span>
+                <input id="query" type="search" placeholder="Filter" aria-label="Filter" title="Filter" data-i18n-placeholder="controls.filter" data-i18n-aria-label="controls.filter" data-i18n-title="controls.filter">
               </label>
-              <label>Format
-                <select id="downloadMode" aria-label="Format à télécharger" title="Format à télécharger">
-                  <option value="landscape">Paysage</option>
+              <label><span data-i18n="controls.format">Format</span>
+                <select id="downloadMode" aria-label="Format to download" title="Format to download" data-i18n-aria-label="controls.downloadFormat" data-i18n-title="controls.downloadFormat">
+                  <option value="landscape" data-i18n="formats.landscape">Landscape</option>
                   <option value="portrait">Portrait</option>
-                  <option value="both">Les deux</option>
+                  <option value="both" data-i18n="formats.both">Both</option>
                 </select>
               </label>
-              <button id="scan">Scanner</button>
-              <button id="selectAll" class="secondary">Tout cocher</button>
-              <button id="download">Télécharger</button>
+              <button id="scan" data-i18n="actions.scan">Scan</button>
+              <button id="selectAll" class="secondary" data-i18n="actions.selectAll">Select all</button>
+              <button id="download" data-i18n="actions.download">Download</button>
             </div>
           </div>
           <div class="header-status">
-            <span id="status">Prêt.</span>
-            <span id="counter">0 sélectionnée</span>
+            <span id="status" data-i18n="status.ready">Ready.</span>
+            <span id="counter">0 selected</span>
             <div id="progressWrap" class="progress-wrap" hidden>
               <div id="progressBar" class="progress-bar"></div>
             </div>
           </div>
           <nav class="tabs" aria-label="Navigation">
-            <button id="legacyImagesTab" class="tab active" type="button">Images</button>
-            <button id="legacyConfigTab" class="tab" type="button">Config</button>
+            <button id="legacyImagesTab" class="tab active" type="button" data-i18n="tabs.images">Images</button>
+            <button id="legacyConfigTab" class="tab" type="button" data-i18n="tabs.config">Config</button>
           </nav>
           <div class="controls">
-            <label><input id="legacyStart" type="number" min="1" value="1" aria-label="Page début" title="Page début"></label>
-            <label><input id="legacyBatchSize" type="number" min="1" max="20" value="3" aria-label="Lot" title="Lot"></label>
-            <label><input id="legacyQuery" type="search" placeholder="Filtre" aria-label="Filtre" title="Filtre"></label>
-            <button id="legacyScan">Scanner</button>
-            <button id="legacySelectAll" class="secondary">Tout cocher</button>
-            <button id="legacyDownload">Télécharger</button>
+            <label><input id="legacyStart" type="number" min="1" value="1" aria-label="Start page" title="Start page" data-i18n-aria-label="controls.startPage" data-i18n-title="controls.startPage"></label>
+            <label><input id="legacyBatchSize" type="number" min="1" max="20" value="3" aria-label="Batch" title="Batch" data-i18n-aria-label="controls.batch" data-i18n-title="controls.batch"></label>
+            <label><input id="legacyQuery" type="search" placeholder="Filter" aria-label="Filter" title="Filter" data-i18n-placeholder="controls.filter" data-i18n-aria-label="controls.filter" data-i18n-title="controls.filter"></label>
+            <button id="legacyScan" data-i18n="actions.scan">Scan</button>
+            <button id="legacySelectAll" class="secondary" data-i18n="actions.selectAll">Select all</button>
+            <button id="legacyDownload" data-i18n="actions.download">Download</button>
           </div>
         </div>
       </div>
@@ -862,34 +927,40 @@ INDEX_HTML = r"""<!doctype html>
   <main>
     <div id="updateNotice" class="update-notice" hidden>
       <span id="updateText"></span>
-      <a id="updateLink" href="#" target="_blank" rel="noreferrer">Télécharger</a>
+      <a id="updateLink" href="#" target="_blank" rel="noreferrer" data-i18n="actions.download">Download</a>
     </div>
     <section id="imagesPage" class="page">
       <div class="status">
-        <span id="legacyStatus">Prêt.</span>
-        <span id="legacyCounter">0 sélectionnée</span>
+        <span id="legacyStatus" data-i18n="status.ready">Ready.</span>
+        <span id="legacyCounter">0 selected</span>
       </div>
       <div id="legacyProgressWrap" class="progress-wrap" hidden>
         <div id="legacyProgressBar" class="progress-bar"></div>
       </div>
-      <div id="emptyState" class="empty-state" hidden>Aucune image à afficher.</div>
+      <div id="emptyState" class="empty-state" hidden data-i18n="empty.noImages">No images to show.</div>
       <section id="grid" class="grid"></section>
       <div class="load-more-wrap">
-        <button id="loadMore" class="secondary" type="button">Charger plus</button>
+        <button id="loadMore" class="secondary" type="button" data-i18n="actions.loadMore">Load more</button>
       </div>
     </section>
     <section id="configPage" class="page" hidden>
       <div class="config-panel">
-        <h2>Bibliothèque</h2>
-        <label>Emplacement
+        <h2 data-i18n="config.library">Library</h2>
+        <label><span data-i18n="config.language">Language</span>
+          <select id="language">
+            <option value="en">English</option>
+            <option value="fr">Français</option>
+          </select>
+        </label>
+        <label><span data-i18n="config.location">Location</span>
           <input id="libraryDir" class="wide-input" type="text" placeholder="C:\Users\...\Pictures\Spotlight">
         </label>
         <div class="config-row">
-          <span id="configStatus" class="status">Chargement de la configuration...</span>
+          <span id="configStatus" class="status" data-i18n="config.loading">Loading configuration...</span>
           <div>
-            <button id="pickFolder" class="secondary" type="button">Choisir</button>
-            <button id="openFolder" class="secondary" type="button">Ouvrir</button>
-            <button id="saveConfig" type="button">Enregistrer</button>
+            <button id="pickFolder" class="secondary" type="button" data-i18n="actions.choose">Choose</button>
+            <button id="openFolder" class="secondary" type="button" data-i18n="actions.open">Open</button>
+            <button id="saveConfig" type="button" data-i18n="actions.save">Save</button>
           </div>
         </div>
       </div>
@@ -911,6 +982,7 @@ INDEX_HTML = r"""<!doctype html>
     const configPage = document.querySelector("#configPage");
     const controls = document.querySelector(".controls");
     const libraryDirInput = document.querySelector("#libraryDir");
+    const languageSelect = document.querySelector("#language");
     const configStatusEl = document.querySelector("#configStatus");
     const pickFolderBtn = document.querySelector("#pickFolder");
     const openFolderBtn = document.querySelector("#openFolder");
@@ -920,12 +992,163 @@ INDEX_HTML = r"""<!doctype html>
     const updateLink = document.querySelector("#updateLink");
     const progressWrap = document.querySelector("#progressWrap");
     const progressBar = document.querySelector("#progressBar");
+    const I18N = {
+      en: {
+        "tabs.images": "Images",
+        "tabs.config": "Config",
+        "controls.page": "Page",
+        "controls.startPage": "Start page",
+        "controls.batch": "Batch",
+        "controls.batchSize": "Number of pages shown",
+        "controls.filter": "Filter",
+        "controls.format": "Format",
+        "controls.downloadFormat": "Format to download",
+        "formats.landscape": "Landscape",
+        "formats.both": "Both",
+        "actions.scan": "Scan",
+        "actions.selectAll": "Select all",
+        "actions.download": "Download",
+        "actions.loadMore": "Load more",
+        "actions.choose": "Choose",
+        "actions.open": "Open",
+        "actions.save": "Save",
+        "status.ready": "Ready.",
+        "status.searchingFormats": "Finding formats {current}/{total}...",
+        "status.scanning": "Scanning...",
+        "status.loadingNext": "Loading next batch...",
+        "status.scanningPage": "Scanning page {page} ({current}/{total})...",
+        "status.batchDone": "{total} image{totalPlural} shown. Last batch: {added} new. Next page: {nextPage}.",
+        "status.noSelection": "No image selected.",
+        "status.downloading": "Downloading...",
+        "status.downloadingProgress": "Downloading {current}/{total}...",
+        "status.downloadDone": "{saved} downloaded, {skipped} already present{failedText}. Folder: {folder}",
+        "status.failedText": ", {failed} error{plural}",
+        "counter.selected": "{count} selected",
+        "empty.noImages": "No images to show.",
+        "empty.noSearchMatch": "No images match this search in this batch.",
+        "empty.noBatchImages": "No images found in this batch.",
+        "badge.inLibrary": "Already in library",
+        "link.original": "Original",
+        "config.library": "Library",
+        "config.language": "Language",
+        "config.location": "Location",
+        "config.loading": "Loading configuration...",
+        "config.notFound": "Configuration not found",
+        "config.currentFolder": "Current folder: {folder}",
+        "config.saving": "Saving...",
+        "config.saveFailed": "Save failed",
+        "config.savedFolder": "Saved folder: {folder}",
+        "config.picking": "Selecting folder...",
+        "config.pickFailed": "Selection failed",
+        "config.pickedFolder": "Selected folder: {folder}",
+        "config.pickCanceled": "Selection canceled.",
+        "config.opening": "Opening folder...",
+        "config.openFailed": "Open failed",
+        "config.openedFolder": "Opened folder: {folder}",
+        "errors.variants": "Variants not found",
+        "errors.scan": "Scan failed",
+        "errors.download": "Download failed",
+        "updates.available": "New version available: {latestVersion} (you have {currentVersion})."
+      },
+      fr: {
+        "tabs.images": "Images",
+        "tabs.config": "Config",
+        "controls.page": "Page",
+        "controls.startPage": "Page de début",
+        "controls.batch": "Lot",
+        "controls.batchSize": "Nombre de pages affichées",
+        "controls.filter": "Filtre",
+        "controls.format": "Format",
+        "controls.downloadFormat": "Format à télécharger",
+        "formats.landscape": "Paysage",
+        "formats.both": "Les deux",
+        "actions.scan": "Scanner",
+        "actions.selectAll": "Tout cocher",
+        "actions.download": "Télécharger",
+        "actions.loadMore": "Charger plus",
+        "actions.choose": "Choisir",
+        "actions.open": "Ouvrir",
+        "actions.save": "Enregistrer",
+        "status.ready": "Prêt.",
+        "status.searchingFormats": "Recherche des formats {current}/{total}...",
+        "status.scanning": "Scan en cours...",
+        "status.loadingNext": "Chargement du lot suivant...",
+        "status.scanningPage": "Scan de la page {page} ({current}/{total})...",
+        "status.batchDone": "{total} image{totalPlural} affichée{totalPlural}. Dernier lot: {added} nouvelle{addedPlural}. Prochaine page: {nextPage}.",
+        "status.noSelection": "Aucune image sélectionnée.",
+        "status.downloading": "Téléchargement...",
+        "status.downloadingProgress": "Téléchargement {current}/{total}...",
+        "status.downloadDone": "{saved} téléchargée{savedPlural}, {skipped} déjà présente{skippedPlural}{failedText}. Dossier: {folder}",
+        "status.failedText": ", {failed} erreur{plural}",
+        "counter.selected": "{count} sélectionnée{plural}",
+        "empty.noImages": "Aucune image à afficher.",
+        "empty.noSearchMatch": "Aucune image ne correspond à cette recherche dans ce lot.",
+        "empty.noBatchImages": "Aucune image trouvée dans ce lot.",
+        "badge.inLibrary": "Déjà dans la bibliothèque",
+        "link.original": "Original",
+        "config.library": "Bibliothèque",
+        "config.language": "Langue",
+        "config.location": "Emplacement",
+        "config.loading": "Chargement de la configuration...",
+        "config.notFound": "Configuration introuvable",
+        "config.currentFolder": "Dossier actuel: {folder}",
+        "config.saving": "Enregistrement...",
+        "config.saveFailed": "Enregistrement impossible",
+        "config.savedFolder": "Dossier enregistré: {folder}",
+        "config.picking": "Sélection du dossier...",
+        "config.pickFailed": "Sélection impossible",
+        "config.pickedFolder": "Dossier sélectionné: {folder}",
+        "config.pickCanceled": "Sélection annulée.",
+        "config.opening": "Ouverture du dossier...",
+        "config.openFailed": "Ouverture impossible",
+        "config.openedFolder": "Dossier ouvert: {folder}",
+        "errors.variants": "Variantes introuvables",
+        "errors.scan": "Scan impossible",
+        "errors.download": "Téléchargement impossible",
+        "updates.available": "Nouvelle version disponible: {latestVersion} (vous avez {currentVersion})."
+      }
+    };
+    let currentLanguage = "en";
     let items = [];
     let seenUrls = new Set();
     let nextPage = 1;
     let lastBatchSize = 3;
     let lastQuery = "";
     const variantCache = new Map();
+
+    function normalizeLanguage(language) {
+      return language === "fr" ? "fr" : "en";
+    }
+
+    function t(key, values = {}) {
+      const template = I18N[currentLanguage]?.[key] || I18N.en[key] || key;
+      return template.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? "");
+    }
+
+    function applyLanguage(language) {
+      currentLanguage = normalizeLanguage(language);
+      document.documentElement.lang = currentLanguage;
+      languageSelect.value = currentLanguage;
+      document.querySelectorAll("[data-i18n]").forEach(element => {
+        element.textContent = t(element.dataset.i18n);
+      });
+      document.querySelectorAll("[data-i18n-placeholder]").forEach(element => {
+        element.placeholder = t(element.dataset.i18nPlaceholder);
+      });
+      document.querySelectorAll("[data-i18n-aria-label]").forEach(element => {
+        element.setAttribute("aria-label", t(element.dataset.i18nAriaLabel));
+      });
+      document.querySelectorAll("[data-i18n-title]").forEach(element => {
+        element.title = t(element.dataset.i18nTitle);
+      });
+      document.querySelectorAll(".library-badge").forEach(badge => {
+        badge.textContent = t("badge.inLibrary");
+      });
+      document.querySelectorAll(".meta a").forEach(link => {
+        link.textContent = t("link.original");
+      });
+      updateCounter();
+    }
 
     function showPage(page) {
       const showConfig = page === "config";
@@ -977,7 +1200,7 @@ INDEX_HTML = r"""<!doctype html>
       if (variantCache.has(item.postUrl)) return variantCache.get(item.postUrl);
       const response = await fetch(`/api/variants?postUrl=${encodeURIComponent(item.postUrl)}`);
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Variantes introuvables");
+      if (!response.ok) throw new Error(data.error || t("errors.variants"));
       const variants = data.items?.length ? data.items : [item];
       variantCache.set(item.postUrl, variants);
       return variants;
@@ -989,7 +1212,7 @@ INDEX_HTML = r"""<!doctype html>
 
       const resolved = [];
       for (const [index, item] of chosen.entries()) {
-        statusEl.textContent = `Recherche des formats ${index + 1}/${chosen.length}...`;
+        statusEl.textContent = t("status.searchingFormats", {current: index + 1, total: chosen.length});
         setProgress(index, chosen.length);
         const variants = await variantsForItem(item);
         const wanted = variants.filter(variant => mode === "both" || variant.orientation === mode);
@@ -1001,7 +1224,7 @@ INDEX_HTML = r"""<!doctype html>
 
     function updateCounter() {
       const count = selectedItems().length;
-      counterEl.textContent = `${count} sélectionnée${count > 1 ? "s" : ""}`;
+      counterEl.textContent = t("counter.selected", {count, plural: count > 1 ? "s" : ""});
       document.querySelectorAll(".tile").forEach(tile => {
         const checked = tile.querySelector(".pick").checked;
         tile.classList.toggle("selected", checked);
@@ -1023,7 +1246,7 @@ INDEX_HTML = r"""<!doctype html>
       if (!tile.querySelector(".library-badge")) {
         const badge = document.createElement("span");
         badge.className = "library-badge";
-        badge.textContent = "Déjà dans la bibliothèque";
+        badge.textContent = t("badge.inLibrary");
         tile.querySelector(".image-wrap").appendChild(badge);
       }
       updateCounter();
@@ -1062,13 +1285,13 @@ INDEX_HTML = r"""<!doctype html>
           <div class="image-wrap">
             <input class="check pick" type="checkbox" data-index="${index}" ${item.inLibrary ? "disabled" : ""}>
             <img loading="lazy" src="/proxy?url=${encodeURIComponent(item.previewUrl || item.finalUrl)}" alt="">
-            ${item.inLibrary ? '<span class="library-badge">Déjà dans la bibliothèque</span>' : ''}
+            ${item.inLibrary ? `<span class="library-badge">${t("badge.inLibrary")}</span>` : ""}
           </div>
           <div class="meta">
             <div class="title"></div>
             <div class="row">
               <span>${item.date || ""}</span>
-              <a href="${item.finalUrl}" target="_blank" rel="noreferrer">Original</a>
+              <a href="${item.finalUrl}" target="_blank" rel="noreferrer">${t("link.original")}</a>
             </div>
           </div>
         `;
@@ -1104,23 +1327,29 @@ INDEX_HTML = r"""<!doctype html>
       const query = lastQuery;
       setBusy(true);
       statusEl.className = "";
-      statusEl.textContent = reset ? "Scan en cours..." : "Chargement du lot suivant...";
+      statusEl.textContent = reset ? t("status.scanning") : t("status.loadingNext");
       try {
         let added = 0;
         for (let offset = 0; offset < pages; offset++) {
           const page = start + offset;
           setProgress(offset, pages);
-          statusEl.textContent = `Scan de la page ${page} (${offset + 1}/${pages})...`;
+          statusEl.textContent = t("status.scanningPage", {page, current: offset + 1, total: pages});
           const response = await fetch(`/api/scan?start=${page}&pages=1&query=${encodeURIComponent(query)}`);
           const data = await response.json();
-          if (!response.ok) throw new Error(data.error || "Scan impossible");
+          if (!response.ok) throw new Error(data.error || t("errors.scan"));
           added += appendItems(data.items);
           setProgress(offset + 1, pages);
         }
         nextPage = start + pages;
-        statusEl.textContent = `${items.length} image${items.length > 1 ? "s" : ""} affichée${items.length > 1 ? "s" : ""}. Dernier lot: ${added} nouvelle${added > 1 ? "s" : ""}. Prochaine page: ${nextPage}.`;
+        statusEl.textContent = t("status.batchDone", {
+          total: items.length,
+          totalPlural: items.length > 1 ? "s" : "",
+          added,
+          addedPlural: added > 1 ? "s" : "",
+          nextPage
+        });
         if (!items.length) {
-          showEmptyState(query ? "Aucune image ne correspond à cette recherche dans ce lot." : "Aucune image trouvée dans ce lot.");
+          showEmptyState(query ? t("empty.noSearchMatch") : t("empty.noBatchImages"));
         }
       } catch (error) {
         statusEl.className = "error";
@@ -1133,26 +1362,26 @@ INDEX_HTML = r"""<!doctype html>
     async function download() {
       const chosen = selectedItems();
       if (!chosen.length) {
-        statusEl.textContent = "Aucune image sélectionnée.";
+        statusEl.textContent = t("status.noSelection");
         return;
       }
       setBusy(true);
       statusEl.className = "";
-      statusEl.textContent = "Téléchargement...";
+      statusEl.textContent = t("status.downloading");
       try {
         const downloads = await downloadItemsForSelection(chosen);
         const results = [];
         let folder = "";
         for (const [index, item] of downloads.entries()) {
           setProgress(index, downloads.length);
-          statusEl.textContent = `Téléchargement ${index + 1}/${downloads.length}...`;
+          statusEl.textContent = t("status.downloadingProgress", {current: index + 1, total: downloads.length});
           const response = await fetch("/api/download", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify({items: [item]})
           });
           const data = await response.json();
-          if (!response.ok) throw new Error(data.error || "Téléchargement impossible");
+          if (!response.ok) throw new Error(data.error || t("errors.download"));
           folder = data.folder || folder;
           results.push(...data.results);
           setProgress(index + 1, downloads.length);
@@ -1165,7 +1394,15 @@ INDEX_HTML = r"""<!doctype html>
           const index = items.findIndex(item => item.finalUrl === result.url);
           if (index >= 0) markTileInLibrary(index, result.path || "");
         }
-        statusEl.textContent = `${saved.length} téléchargée${saved.length > 1 ? "s" : ""}, ${skipped.length} déjà présente${skipped.length > 1 ? "s" : ""}${failed ? `, ${failed} erreur${failed > 1 ? "s" : ""}` : ""}. Dossier: ${folder}`;
+        const failedText = failed ? t("status.failedText", {failed, plural: failed > 1 ? "s" : ""}) : "";
+        statusEl.textContent = t("status.downloadDone", {
+          saved: saved.length,
+          savedPlural: saved.length > 1 ? "s" : "",
+          skipped: skipped.length,
+          skippedPlural: skipped.length > 1 ? "s" : "",
+          failedText,
+          folder
+        });
       } catch (error) {
         statusEl.className = "error";
         statusEl.textContent = error.message;
@@ -1178,10 +1415,11 @@ INDEX_HTML = r"""<!doctype html>
       try {
         const response = await fetch("/api/config");
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Configuration introuvable");
+        if (!response.ok) throw new Error(data.error || t("config.notFound"));
+        applyLanguage(data.language || "en");
         libraryDirInput.value = data.libraryDir || "";
         configStatusEl.className = "status";
-        configStatusEl.textContent = `Dossier actuel: ${data.libraryDir}`;
+        configStatusEl.textContent = t("config.currentFolder", {folder: data.libraryDir});
       } catch (error) {
         configStatusEl.className = "status error";
         configStatusEl.textContent = error.message;
@@ -1191,17 +1429,18 @@ INDEX_HTML = r"""<!doctype html>
     async function saveConfig() {
       saveConfigBtn.disabled = true;
       configStatusEl.className = "status";
-      configStatusEl.textContent = "Enregistrement...";
+      configStatusEl.textContent = t("config.saving");
       try {
         const response = await fetch("/api/config", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({libraryDir: libraryDirInput.value})
+          body: JSON.stringify({libraryDir: libraryDirInput.value, language: languageSelect.value})
         });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Enregistrement impossible");
+        if (!response.ok) throw new Error(data.error || t("config.saveFailed"));
+        applyLanguage(data.language || "en");
         libraryDirInput.value = data.libraryDir;
-        configStatusEl.textContent = `Dossier enregistré: ${data.libraryDir}`;
+        configStatusEl.textContent = t("config.savedFolder", {folder: data.libraryDir});
         refreshLibraryStatus();
       } catch (error) {
         configStatusEl.className = "status error";
@@ -1214,16 +1453,16 @@ INDEX_HTML = r"""<!doctype html>
     async function pickFolder() {
       pickFolderBtn.disabled = true;
       configStatusEl.className = "status";
-      configStatusEl.textContent = "Sélection du dossier...";
+      configStatusEl.textContent = t("config.picking");
       try {
         const response = await fetch("/api/pick-folder", {method: "POST"});
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Sélection impossible");
+        if (!response.ok) throw new Error(data.error || t("config.pickFailed"));
         if (data.libraryDir) {
           libraryDirInput.value = data.libraryDir;
-          configStatusEl.textContent = `Dossier sélectionné: ${data.libraryDir}`;
+          configStatusEl.textContent = t("config.pickedFolder", {folder: data.libraryDir});
         } else {
-          configStatusEl.textContent = "Sélection annulée.";
+          configStatusEl.textContent = t("config.pickCanceled");
         }
       } catch (error) {
         configStatusEl.className = "status error";
@@ -1236,13 +1475,13 @@ INDEX_HTML = r"""<!doctype html>
     async function openFolder() {
       openFolderBtn.disabled = true;
       configStatusEl.className = "status";
-      configStatusEl.textContent = "Ouverture du dossier...";
+      configStatusEl.textContent = t("config.opening");
       try {
         const response = await fetch("/api/open-library", {method: "POST"});
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Ouverture impossible");
+        if (!response.ok) throw new Error(data.error || t("config.openFailed"));
         libraryDirInput.value = data.libraryDir || libraryDirInput.value;
-        configStatusEl.textContent = `Dossier ouvert: ${data.libraryDir}`;
+        configStatusEl.textContent = t("config.openedFolder", {folder: data.libraryDir});
       } catch (error) {
         configStatusEl.className = "status error";
         configStatusEl.textContent = error.message;
@@ -1256,7 +1495,7 @@ INDEX_HTML = r"""<!doctype html>
         const response = await fetch("/api/update-check");
         const data = await response.json();
         if (!response.ok || !data.updateAvailable) return;
-        updateText.textContent = `Nouvelle version disponible: ${data.latestVersion} (vous avez ${data.currentVersion}).`;
+        updateText.textContent = t("updates.available", {latestVersion: data.latestVersion, currentVersion: data.currentVersion});
         updateLink.href = data.downloadUrl || data.releaseUrl;
         updateNotice.hidden = false;
       } catch (error) {
@@ -1292,15 +1531,21 @@ INDEX_HTML = r"""<!doctype html>
     saveConfigBtn.addEventListener("click", saveConfig);
     pickFolderBtn.addEventListener("click", pickFolder);
     openFolderBtn.addEventListener("click", openFolder);
+    languageSelect.addEventListener("change", () => applyLanguage(languageSelect.value));
     selectAllBtn.addEventListener("click", () => {
       const picks = [...document.querySelectorAll(".pick:not(:disabled)")];
       const shouldCheck = picks.some(input => !input.checked);
       picks.forEach(input => input.checked = shouldCheck);
       updateCounter();
     });
-    checkForUpdates();
-    if (window.location.hash === "#config") showPage("config");
-    loadBatch({reset: true});
+    async function init() {
+      await loadConfig();
+      checkForUpdates();
+      if (window.location.hash === "#config") showPage("config");
+      loadBatch({reset: true});
+    }
+
+    init();
   </script>
 </body>
 </html>
@@ -1471,14 +1716,14 @@ def main() -> int:
     if not acquire_single_instance_lock():
         show_message(
             "Windows Spotlight Downloader",
-            "Windows Spotlight Downloader est déjà ouvert. Ferme l'autre fenêtre avant d'en lancer une nouvelle.",
+            tr("single_instance.message"),
         )
         return 1
     with open_server() as server:
         port = server.server_address[1]
         url = f"http://127.0.0.1:{port}"
         print(f"Windows Spotlight Downloader: {url}")
-        print(f"Dossier de sortie: {library_dir()}")
+        print(tr("logs.output_folder", folder=library_dir()))
         server_thread = threading.Thread(target=server.serve_forever, daemon=True)
         server_thread.start()
         try:
@@ -1493,7 +1738,7 @@ def main() -> int:
             )
             webview.start(gui="winforms")
         except KeyboardInterrupt:
-            print("\nArrêt.")
+            print(f"\n{tr('logs.stopped')}")
         finally:
             server.shutdown()
             server.server_close()
